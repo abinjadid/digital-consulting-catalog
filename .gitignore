@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Plaintext data — MUST NOT be committed (only the encrypted data/catalog.enc ships)
+catalog.json
+*.plain.json
+data/*.json
+!data/.gitkeep
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.vscode/
+.idea/

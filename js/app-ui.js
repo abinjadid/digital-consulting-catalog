@@ -1,0 +1,534 @@
+/* =========================================================================
+ * كتالوج الخدمات — الطبقة التفاعلية: التحرير، الإعدادات، القفل، التهيئة
+ * ========================================================================= */
+(function () {
+  "use strict";
+  var I = window.__catInternal;
+  var S = I.S, C = I.C, ICON = I.ICON, Box = I.Box, esc = I.esc, attr = I.attr, uniq = I.uniq;
+  var $ = I.$, $all = I.$all, render = I.render, reRenderView = I.reRenderView, toast = I.toast;
+  var openModal = I.openModal, closeModal = I.closeModal, confirmDialog = I.confirmDialog, closeDrawer = I.closeDrawer;
+  var persist = I.persist, fetchEnvelope = I.fetchEnvelope, refreshSha = I.refreshSha;
+  var services = I.services, refs = I.refs, allValues = I.allValues, usageCount = I.usageCount, uniqueSectors = I.uniqueSectors;
+
+  var envelope = null;
+  var manageTab = "department";
+
+  /* ---------------- Theme ---------------- */
+  function applyTheme(t) {
+    document.documentElement.setAttribute("data-theme", t);
+    localStorage.setItem("cat_theme", t);
+  }
+  function toggleTheme() { applyTheme(I.isDark() ? "light" : "dark"); if (S.catalog) render(); }
+
+  /* ---------------- Prompt dialog ---------------- */
+  function promptDialog(opts) {
+    return new Promise(function (resolve) {
+      var m = openModal(
+        '<div class="modal-head"><div class="mi">' + ICON(opts.icon || "edit") + '</div><h2>' + esc(opts.title) + '</h2></div>' +
+        '<div class="modal-body"><div class="form-row full"><label>' + esc(opts.label || "") + '</label>' +
+        '<input type="text" id="prompt-in" value="' + attr(opts.value || "") + '" placeholder="' + attr(opts.placeholder || "") + '"></div></div>' +
+        '<div class="modal-foot"><button class="btn primary" data-ok>' + esc(opts.confirm || "حفظ") + '</button>' +
+        '<button class="btn ghost" data-cancel>إلغاء</button></div>', { sm: true });
+      var input = $("#prompt-in", m); input.focus(); input.select();
+      function ok() { var v = input.value.trim(); closeModal(); resolve(v || null); }
+      $("[data-ok]", m).addEventListener("click", ok);
+      $("[data-cancel]", m).addEventListener("click", function () { closeModal(); resolve(null); });
+      input.addEventListener("keydown", function (e) { if (e.key === "Enter") ok(); });
+    });
+  }
+
+  /* =====================================================================
+   * EVENT DELEGATION
+   * ===================================================================== */
+  document.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-act]");
+    if (!t) return;
+    var act = t.getAttribute("data-act");
+    var field = t.getAttribute("data-field");
+    var value = t.getAttribute("data-value");
+    var id = t.getAttribute("data-id");
+
+    switch (act) {
+      case "nav": S.view = t.getAttribute("data-view"); S.selected = null; closeDrawer(); reRenderView(); window.scrollTo({ top: 0, behavior: "smooth" }); break;
+      case "open": I.openService(+id); break;
+      case "close-drawer": closeDrawer(); break;
+      case "theme": toggleTheme(); break;
+      case "settings": case "editor": openSettings(); break;
+      case "toggle-filters": S.showFilters = !S.showFilters; reRenderView(); break;
+      case "filter": toggleFilter(field, value); break;
+      case "unfilter": removeFilter(field, value); break;
+      case "clear-filters": clearFilters(); break;
+      case "goto-filter": gotoFilter(field, value); break;
+      case "add-service": openServiceForm(null); break;
+      case "edit-service": closeDrawer(); openServiceForm(+id); break;
+      case "delete-service": deleteService(+id); break;
+      case "manage": openManage(); break;
+      case "chk-toggle": t.classList.toggle("on"); break;
+      case "manage-tab": manageTab = t.getAttribute("data-tab"); renderManage(); break;
+      case "manage-add": manageAdd(); break;
+      case "manage-rename": manageRename(t.getAttribute("data-value")); break;
+      case "manage-delete": manageDelete(t.getAttribute("data-value")); break;
+      case "settings-theme": applyTheme(t.getAttribute("data-theme")); render(); openSettings(); break;
+      case "save-token": saveToken(); break;
+      case "clear-token": clearToken(); break;
+      case "change-pw": changePassword(); break;
+      case "export": exportData(); break;
+      case "import": $("#import-file").click(); break;
+      case "reload-data": reloadData(); break;
+      case "lock-app": lockApp(); break;
+      case "sector-new": revealSectorInput(); break;
+    }
+  });
+
+  document.addEventListener("input", function (e) {
+    var el = e.target;
+    if (el.id === "top-q" || el.id === "svc-q") { S.search = el.value; reRenderView(); }
+    else if (el.getAttribute && el.getAttribute("data-combo")) { S.combo[el.getAttribute("data-combo")] = el.value; reRenderView(); }
+  });
+
+  document.addEventListener("change", function (e) {
+    if (e.target.id === "svc-sort") { S.sort = e.target.value; reRenderView(); }
+    if (e.target.id === "import-file") handleImportFile(e.target.files[0]);
+  });
+
+  /* ---------------- Filters ---------------- */
+  function toggleFilter(field, value) {
+    var arr = S.filters[field]; if (!arr) return;
+    var i = arr.indexOf(value);
+    if (i >= 0) arr.splice(i, 1); else arr.push(value);
+    reRenderView();
+  }
+  function removeFilter(field, value) { var arr = S.filters[field]; var i = arr.indexOf(value); if (i >= 0) arr.splice(i, 1); reRenderView(); }
+  function clearFilters() { for (var k in S.filters) S.filters[k] = []; S.combo = { department: "", owner: "", representative: "" }; reRenderView(); }
+  function gotoFilter(field, value) {
+    for (var k in S.filters) S.filters[k] = [];
+    if (S.filters[field]) S.filters[field] = [value];
+    S.view = "services"; S.showFilters = true; S.selected = null; closeDrawer();
+    render(); window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  /* =====================================================================
+   * SERVICE FORM (add / edit)
+   * ===================================================================== */
+  function openServiceForm(id) {
+    var s = id ? services().filter(function (x) { return x.id === id; })[0] : null;
+    var isEdit = !!s;
+    s = s || {};
+    var sectors = uniqueSectors();
+    var cats = uniq(C.taxonomy.categories.concat(allValues("category"))).filter(Boolean);
+    var statuses = uniq(C.taxonomy.statuses.concat(services().map(function (x) { return x.status; }))).filter(Boolean);
+
+    function dl(idn, values) { return '<datalist id="' + idn + '">' + uniq(values).filter(Boolean).map(function (v) { return '<option value="' + attr(v) + '">'; }).join("") + '</datalist>'; }
+    function inp(name, label, val, list, req) {
+      return '<div class="form-row"><label>' + esc(label) + (req ? ' <span class="req">*</span>' : '') + '</label>' +
+        '<input type="text" name="' + name + '" value="' + attr(val || "") + '"' + (list ? ' list="' + list + '" autocomplete="off"' : '') + '></div>';
+    }
+    function ta(name, label, val, full) {
+      return '<div class="form-row ' + (full ? "full" : "") + '"><label>' + esc(label) + '</label><textarea name="' + name + '">' + esc(val || "") + '</textarea></div>';
+    }
+    function sel(name, label, options, cur, allowEmpty) {
+      return '<div class="form-row"><label>' + esc(label) + '</label><select name="' + name + '">' +
+        (allowEmpty ? '<option value="">—</option>' : '') +
+        options.map(function (o) { return '<option value="' + attr(o) + '"' + (cur === o ? " selected" : "") + '>' + esc(o) + '</option>'; }).join("") + '</select></div>';
+    }
+    function chkGroup(group, label, options, selected) {
+      selected = selected || [];
+      return '<div class="form-row full"><label>' + esc(label) + '</label><div class="chk-grid">' + options.map(function (o) {
+        var on = selected.indexOf(o) >= 0;
+        return '<button type="button" class="chk' + (on ? " on" : "") + '" data-act="chk-toggle" data-group="' + group + '" data-value="' + attr(o) + '">' +
+          (on ? ICON("check") : "") + esc(o) + '</button>';
+      }).join("") + '</div></div>';
+    }
+    var objOptions = uniq(C.taxonomy.objectives.concat(services().reduce(function (a, x) { return a.concat(x.objectives || []); }, [])));
+    var benOptions = uniq(C.taxonomy.beneficiaries.concat(services().reduce(function (a, x) { return a.concat(x.beneficiaries || []); }, [])));
+
+    var body =
+      dl("dl-sector", sectors) + dl("dl-department", allValues("department")) + dl("dl-owner", uniq(services().map(function (x) { return x.owner; }))) + dl("dl-rep", uniq(services().map(function (x) { return x.representative; }))) +
+      '<div class="form-grid">' +
+        inp("title", "عنوان الخدمة", s.title, null, true) + '<div></div>' +
+        inp("sector", "القطاع", s.sector, "dl-sector", true) +
+        inp("department", "الإدارة العامة", s.department, "dl-department") +
+        inp("owner", "مالك الخدمة", s.owner, "dl-owner") +
+        inp("representative", "ممثل الخدمة", s.representative, "dl-rep") +
+        sel("stage", "مرحلة التحول الرقمي", C.stages.map(function (x) { return x.key; }), s.stage, true) +
+        sel("category", "الفئة", cats, s.category, true) +
+        sel("status", "حالة الخدمة", statuses, s.status || "قائمة", true) +
+        inp("sla", "الخط الزمني (SLA)", s.sla) +
+        chkGroup("objectives", "الأهداف الاستراتيجية", objOptions, s.objectives) +
+        chkGroup("beneficiaries", "المستفيدون", benOptions, s.beneficiaries) +
+        ta("description", "وصف الخدمة", s.description, true) +
+        ta("goals", "الأهداف المرجوّة", s.goals, true) +
+        ta("prerequisites", "المتطلبات الأولية", s.prerequisites) +
+        ta("outputs", "المخرجات المتوقّعة", s.outputs) +
+        ta("stageRationale", "مبرر تصنيف المرحلة", s.stageRationale, true) +
+      '</div>';
+
+    var m = openModal(
+      '<div class="modal-head"><div class="mi">' + ICON(isEdit ? "edit" : "plus") + '</div><h2>' + (isEdit ? "تعديل خدمة" : "إضافة خدمة جديدة") + '</h2>' +
+        '<button class="icon-btn" data-act="close-modal-x" style="margin-inline-start:auto">' + ICON("close") + '</button></div>' +
+      '<form id="svc-form"><div class="modal-body">' + body + '</div>' +
+      '<div class="modal-foot"><button type="submit" class="btn primary">' + ICON("check") + (isEdit ? "حفظ التعديلات" : "إضافة الخدمة") + '</button>' +
+      '<button type="button" class="btn ghost" id="cancel-form">إلغاء</button>' +
+      (S.token ? '' : '<span class="muted" style="font-size:11.5px;align-self:center">لا يوجد رمز GitHub — سيُحفظ محليًا فقط</span>') + '</div></form>');
+
+    $("#cancel-form", m).addEventListener("click", closeModal);
+    $("[data-act='close-modal-x']", m).addEventListener("click", closeModal);
+    $("#svc-form", m).addEventListener("submit", function (e) { e.preventDefault(); saveServiceForm(id, m); });
+  }
+
+  function saveServiceForm(id, m) {
+    var form = $("#svc-form", m);
+    function val(n) { var el = form.querySelector('[name="' + n + '"]'); return el ? el.value.trim() : ""; }
+    var title = val("title"), sector = val("sector");
+    if (!title) { toast("عنوان الخدمة مطلوب", "err"); return; }
+    if (!sector) { toast("القطاع مطلوب", "err"); return; }
+    function chks(group) { return $all('.chk.on[data-group="' + group + '"]', m).map(function (c) { return c.getAttribute("data-value"); }); }
+
+    var rec = {
+      title: title, sector: sector,
+      department: val("department"), owner: val("owner"), representative: val("representative"),
+      stage: val("stage"), category: val("category"), status: val("status"), sla: val("sla"),
+      objectives: chks("objectives"), beneficiaries: chks("beneficiaries"),
+      description: val("description"), goals: val("goals"), prerequisites: val("prerequisites"),
+      outputs: val("outputs"), stageRationale: val("stageRationale"),
+      updatedAt: I.todayISO()
+    };
+
+    var list = S.catalog.services;
+    if (id) {
+      for (var i = 0; i < list.length; i++) if (list[i].id === id) { rec.id = id; list[i] = Object.assign({}, list[i], rec); break; }
+    } else {
+      rec.id = list.reduce(function (mx, x) { return Math.max(mx, x.id || 0); }, 0) + 1;
+      list.unshift(rec);
+    }
+    closeModal();
+    commitChange(id ? "تعديل خدمة: " + title : "إضافة خدمة: " + title, render, id ? "تم حفظ التعديلات" : "تمت إضافة الخدمة");
+  }
+
+  function deleteService(id) {
+    var s = services().filter(function (x) { return x.id === id; })[0]; if (!s) return;
+    confirmDialog({ title: "حذف الخدمة", message: 'سيتم حذف الخدمة: «' + s.title + '». لا يمكن التراجع.', confirm: "حذف", danger: true }).then(function (ok) {
+      if (!ok) return;
+      S.catalog.services = S.catalog.services.filter(function (x) { return x.id !== id; });
+      closeDrawer();
+      commitChange("حذف خدمة: " + s.title, render, "تم حذف الخدمة");
+    });
+  }
+
+  /* Persist wrapper. onRender refreshes UI (runs in every branch — local state
+   * already mutated). okText is the success message, shown ONLY on real success. */
+  function commitChange(commitMsg, onRender, okText) {
+    persist(commitMsg).then(function (r) {
+      if (onRender) onRender();
+      if (r && r.ok) toast(okText || "تم الحفظ", "ok", "تم الحفظ في GitHub");
+      else if (r && r.local) toast(okText || "تم الحفظ محليًا", "ok", "محفوظ في هذا المتصفح — أضِف رمز GitHub للحفظ المشترك");
+    }).catch(function (err) {
+      if (err && err.conflict) { if (onRender) onRender(); handleConflict(commitMsg, onRender, okText); return; }
+      if (onRender) onRender();
+      toast("لم يُحفظ في GitHub", "err", "تغييرك محلي فقط — " + String(err.message || err));
+    });
+  }
+
+  /* Concurrent-edit conflict: let the editor choose, never clobber silently */
+  function handleConflict(commitMsg, onRender, okText) {
+    var m = openModal(
+      '<div class="modal-head"><div class="mi" style="background:var(--danger-soft);color:var(--danger)">' + ICON("refresh") + '</div><h2>تعارض في التعديلات</h2></div>' +
+      '<div class="modal-body"><p style="font-size:13.5px;color:var(--ink-2);line-height:1.7">تم تعديل الكتالوج من مستخدم آخر منذ آخر مزامنة. اختر كيف تريد المتابعة — حتى لا تُفقد تعديلات أحدكما دون قصد:</p></div>' +
+      '<div class="modal-foot"><button class="btn primary" data-rep>' + ICON("check") + 'استبدال بنسختي</button>' +
+      '<button class="btn" data-rel>' + ICON("download") + 'تحميل النسخة الأحدث</button>' +
+      '<button class="btn ghost" data-cancel>إلغاء</button></div>', { sm: true });
+    $("[data-rep]", m).addEventListener("click", function () {
+      closeModal();
+      persist(commitMsg, { force: true }).then(function () { if (onRender) onRender(); toast(okText || "تم الحفظ", "ok", "تم الاستبدال في GitHub"); })
+        .catch(function (e) { toast("تعذّر الحفظ", "err", String(e.message || e)); });
+    });
+    $("[data-rel]", m).addEventListener("click", function () { closeModal(); reloadData(); });
+    $("[data-cancel]", m).addEventListener("click", closeModal);
+  }
+
+  /* =====================================================================
+   * MANAGE LISTS (departments / owners / representatives)
+   * ===================================================================== */
+  var MANAGE_META = {
+    department: { label: "الإدارات العامة", icon: "building", refKey: "departments" },
+    owner: { label: "ملاك الخدمات", icon: "user", refKey: "owners" },
+    representative: { label: "ممثلو الخدمات", icon: "users", refKey: "representatives" }
+  };
+  function openManage() {
+    openModal(
+      '<div class="modal-head"><div class="mi">' + ICON("list") + '</div><h2>إدارة القوائم</h2>' +
+      '<button class="icon-btn" id="mng-close" style="margin-inline-start:auto">' + ICON("close") + '</button></div>' +
+      '<div class="modal-body"><div id="manage-body"></div></div>');
+    $("#mng-close").addEventListener("click", closeModal);
+    renderManage();
+  }
+  function renderManage() {
+    var body = $("#manage-body"); if (!body) return;
+    var tabs = Object.keys(MANAGE_META).map(function (k) {
+      return '<button class="mtab ' + (manageTab === k ? "on" : "") + '" data-act="manage-tab" data-tab="' + k + '">' + ICON(MANAGE_META[k].icon) + ' ' + esc(MANAGE_META[k].label) + '</button>';
+    }).join("");
+    var vals = allValues(manageTab).filter(Boolean).sort(function (a, b) { return a.localeCompare(b, "ar"); });
+    var rows = vals.length ? vals.map(function (v) {
+      var used = usageCount(manageTab, v);
+      return '<div class="mrow"><div class="mtxt"><b>' + esc(v) + '</b><span>' + (used ? used + " خدمة" : "غير مستخدمة") + '</span></div>' +
+        '<span class="usage">' + used + '</span><div class="acts">' +
+        '<button class="mini-btn" data-act="manage-rename" data-value="' + attr(v) + '" title="إعادة تسمية">' + ICON("edit") + '</button>' +
+        '<button class="mini-btn danger" data-act="manage-delete" data-value="' + attr(v) + '" title="حذف">' + ICON("trash") + '</button>' +
+        '</div></div>';
+    }).join("") : '<div class="empty" style="padding:30px"><p>لا توجد عناصر بعد.</p></div>';
+
+    body.innerHTML =
+      '<div class="manage-tabs">' + tabs + '</div>' +
+      '<div style="display:flex;gap:8px;margin-bottom:14px">' +
+        '<input type="text" id="mng-add-in" placeholder="إضافة ' + esc(MANAGE_META[manageTab].label) + '…" style="flex:1;height:40px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13px">' +
+        '<button class="btn primary sm" data-act="manage-add">' + ICON("plus") + 'إضافة</button></div>' +
+      '<div class="mlist">' + rows + '</div>' +
+      (S.token ? '' : '<p class="form-hint" style="margin-top:12px">' + ICON("info") + ' لا يوجد رمز GitHub — التغييرات محلية فقط حتى تضيف رمزًا من الإعدادات.</p>');
+    var addIn = $("#mng-add-in"); if (addIn) addIn.addEventListener("keydown", function (e) { if (e.key === "Enter") manageAdd(); });
+  }
+  function manageAdd() {
+    var input = $("#mng-add-in"); if (!input) return;
+    var v = input.value.trim(); if (!v) return;
+    if (allValues(manageTab).indexOf(v) >= 0) { toast("موجود مسبقًا", "err"); return; }
+    refs()[MANAGE_META[manageTab].refKey].push(v);
+    commitChange("إضافة " + MANAGE_META[manageTab].label + ": " + v, renderManage, "تمت الإضافة");
+  }
+  function manageRename(oldV) {
+    promptDialog({ title: "إعادة تسمية", label: MANAGE_META[manageTab].label, value: oldV, confirm: "حفظ" }).then(function (newV) {
+      if (!newV || newV === oldV) return;
+      var field = manageTab;
+      services().forEach(function (s) { if (s[field] === oldV) s[field] = newV; });
+      var rk = MANAGE_META[manageTab].refKey, list = refs()[rk];
+      var idx = list.indexOf(oldV); if (idx >= 0) list[idx] = newV;
+      if (list.indexOf(newV) !== list.lastIndexOf(newV)) refs()[rk] = uniq(list);
+      commitChange("إعادة تسمية " + MANAGE_META[manageTab].label + ": " + oldV + " → " + newV, function () { renderManage(); render(); openManage(); }, "تم التحديث");
+    });
+  }
+  function manageDelete(v) {
+    var used = usageCount(manageTab, v);
+    if (used > 0) { toast("لا يمكن الحذف", "err", "مستخدمة في " + used + " خدمة — أعد تعيينها أولًا"); return; }
+    confirmDialog({ title: "حذف عنصر", message: 'حذف «' + v + '» من قائمة ' + MANAGE_META[manageTab].label + '؟', confirm: "حذف", danger: true }).then(function (ok) {
+      if (!ok) return;
+      var rk = MANAGE_META[manageTab].refKey;
+      refs()[rk] = refs()[rk].filter(function (x) { return x !== v; });
+      commitChange("حذف " + MANAGE_META[manageTab].label + ": " + v, renderManage, "تم الحذف");
+    });
+  }
+
+  /* =====================================================================
+   * SETTINGS
+   * ===================================================================== */
+  function openSettings() {
+    var g = C.github;
+    var tokenSet = !!S.token;
+    var m = openModal(
+      '<div class="modal-head"><div class="mi">' + ICON("gear") + '</div><h2>الإعدادات</h2>' +
+      '<button class="icon-btn" id="set-close" style="margin-inline-start:auto">' + ICON("close") + '</button></div>' +
+      '<div class="modal-body">' +
+
+      section("المظهر", "moon",
+        '<div style="display:flex;gap:10px">' +
+          '<button class="btn ' + (!I.isDark() ? "primary" : "") + '" data-act="settings-theme" data-theme="light">' + ICON("sun") + 'فاتح</button>' +
+          '<button class="btn ' + (I.isDark() ? "primary" : "") + '" data-act="settings-theme" data-theme="dark">' + ICON("moon") + 'داكن</button>' +
+        '</div>') +
+
+      section("وضع التحرير — رمز GitHub", "key",
+        '<p class="form-hint" style="margin-bottom:10px">لتفعيل الإضافة والتعديل والحذف والحفظ في المستودع، أدخل رمز وصول (Fine-grained token) بصلاحية <b>Contents: Read and write</b> على مستودع <code>' + esc(g.owner + "/" + g.repo) + '</code>. يُحفظ الرمز في هذا المتصفح فقط ولا يُرسل لأي جهة أخرى.</p>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<input type="password" id="gh-token" placeholder="' + (tokenSet ? "•••••••••• (محفوظ)" : "github_pat_...") + '" style="flex:1;min-width:200px;height:42px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13px">' +
+          '<button class="btn primary" data-act="save-token">' + ICON("check") + 'حفظ الرمز</button>' +
+          (tokenSet ? '<button class="btn danger" data-act="clear-token">' + ICON("trash") + 'إزالة</button>' : '') +
+        '</div>' +
+        '<p class="form-hint" style="margin-top:8px">' + (tokenSet ? '<span style="color:var(--good);font-weight:700">' + ICON("check") + ' وضع التحرير مُفعّل</span>' : 'الوضع الحالي: قراءة فقط') +
+        ' · <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700">إنشاء رمز جديد ↗</a></p>') +
+
+      (tokenSet ? section("كلمة مرور الكتالوج", "lock",
+        '<p class="form-hint" style="margin-bottom:10px">تغيير كلمة المرور يُعيد تشفير البيانات بالكامل ويحفظها في المستودع. أبلغ الفريق بالكلمة الجديدة.</p>' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
+          '<input type="password" id="pw-new" placeholder="كلمة مرور جديدة" style="flex:1;min-width:150px;height:42px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13px">' +
+          '<input type="password" id="pw-new2" placeholder="تأكيد الكلمة" style="flex:1;min-width:150px;height:42px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13px">' +
+          '<button class="btn" data-act="change-pw">' + ICON("refresh") + 'تحديث</button></div>') : '') +
+
+      section("النسخ الاحتياطي والمزامنة", "download",
+        '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
+          '<button class="btn" data-act="export">' + ICON("download") + 'تصدير نسخة (JSON)</button>' +
+          '<button class="btn" data-act="import">' + ICON("upload") + 'استيراد نسخة</button>' +
+          '<button class="btn" data-act="reload-data">' + ICON("refresh") + 'تحديث من المستودع</button>' +
+          '<input type="file" id="import-file" accept="application/json,.json" style="display:none">' +
+        '</div>') +
+
+      section("الجلسة", "logout",
+        '<button class="btn danger" data-act="lock-app">' + ICON("lock") + 'قفل التطبيق (تسجيل الخروج)</button>') +
+
+      '</div>');
+    $("#set-close", m).addEventListener("click", closeModal);
+  }
+  function section(title, icon, inner) {
+    return '<div style="padding:16px 0;border-bottom:1px solid var(--border)"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">' +
+      '<div style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent)">' + ICON(icon) + '</div>' +
+      '<b style="font-size:13.5px">' + esc(title) + '</b></div>' + inner + '</div>';
+  }
+
+  function saveToken() {
+    var v = ($("#gh-token") || {}).value; if (v != null) v = v.trim();
+    if (!v) { toast("أدخل الرمز", "err"); return; }
+    localStorage.setItem("cat_ghtoken", v); S.token = v; S.sha = null;
+    toast("جارٍ التحقق من الرمز…", "info");
+    refreshSha().then(function (sha) {
+      if (sha) { toast("تم تفعيل وضع التحرير", "ok"); closeModal(); render(); }
+      else { toast("تعذّر الوصول للمستودع", "err", "تحقق من صلاحيات الرمز"); }
+    });
+  }
+  function clearToken() {
+    localStorage.removeItem("cat_ghtoken"); S.token = null; S.sha = null;
+    toast("تمت إزالة الرمز — قراءة فقط", "info"); closeModal(); render();
+  }
+  function changePassword() {
+    var a = ($("#pw-new") || {}).value || "", b = ($("#pw-new2") || {}).value || "";
+    if (a.length < 6) { toast("كلمة المرور قصيرة (6 أحرف على الأقل)", "err"); return; }
+    if (a !== b) { toast("الكلمتان غير متطابقتين", "err"); return; }
+    var old = S.password; S.password = a;
+    toast("جارٍ إعادة التشفير…", "info");
+    persist("تغيير كلمة مرور الكتالوج").then(function () {
+      if (localStorage.getItem("cat_pw")) localStorage.setItem("cat_pw", a);
+      if (sessionStorage.getItem("cat_pw")) sessionStorage.setItem("cat_pw", a);
+      toast("تم تحديث كلمة المرور", "ok"); closeModal();
+    }).catch(function (err) { S.password = old; toast("فشل التحديث", "err", String(err.message || err)); });
+  }
+
+  /* ---------------- Export / Import ---------------- */
+  function exportData() {
+    var blob = new Blob([JSON.stringify(S.catalog, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url; a.download = "catalog-backup-" + I.todayISO() + ".json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+    toast("تم تصدير نسخة احتياطية", "ok");
+  }
+  function handleImportFile(file) {
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var data = JSON.parse(reader.result);
+        if (!data || !Array.isArray(data.services)) throw new Error("صيغة غير صحيحة");
+        confirmDialog({ title: "استيراد بيانات", message: "سيتم استبدال البيانات الحالية بـ " + data.services.length + " خدمة من الملف. متابعة؟", confirm: "استيراد", icon: "upload" }).then(function (ok) {
+          if (!ok) return;
+          S.catalog = normalizeCatalog(data);
+          closeModal();
+          commitChange("استيراد بيانات", render, "تم الاستيراد");
+        });
+      } catch (e) { toast("تعذّر قراءة الملف", "err", String(e.message || e)); }
+    };
+    reader.readAsText(file);
+  }
+  function reloadData() {
+    toast("جارٍ التحديث…", "info");
+    fetchEnvelope().then(function (env) { return Box.decryptEnvelope(env, S.password); })
+      .then(function (cat) { S.catalog = normalizeCatalog(cat); closeModal(); render(); toast("تم التحديث من المستودع", "ok"); })
+      .catch(function (err) { toast("تعذّر التحديث", "err", String(err.message || err)); });
+  }
+  function lockApp() {
+    sessionStorage.removeItem("cat_pw"); localStorage.removeItem("cat_pw");
+    S.password = null; S.catalog = null; closeModal(); closeDrawer();
+    showLock();
+  }
+
+  /* =====================================================================
+   * LOCK SCREEN + BOOT
+   * ===================================================================== */
+  function normalizeCatalog(cat) {
+    cat = cat || {};
+    cat.services = (cat.services || []).map(function (s, i) {
+      /* ids are always numeric — never let an imported string id reach the DOM */
+      s.id = (s.id != null && isFinite(+s.id)) ? +s.id : (i + 1);
+      s.objectives = s.objectives || [];
+      s.beneficiaries = s.beneficiaries || [];
+      return s;
+    });
+    cat.refs = cat.refs || { departments: [], owners: [], representatives: [] };
+    cat.refs.departments = cat.refs.departments || [];
+    cat.refs.owners = cat.refs.owners || [];
+    cat.refs.representatives = cat.refs.representatives || [];
+    cat.taxonomy = cat.taxonomy || C.taxonomy;
+    cat.updatedAt = cat.updatedAt || I.todayISO();
+    return cat;
+  }
+
+  function showBoot() {
+    if ($("#boot")) return;
+    var b = document.createElement("div"); b.className = "boot"; b.id = "boot";
+    b.innerHTML = '<div class="b-in"><div class="b-logo">' + ICON("briefcase") + '</div><div style="font-weight:700;color:var(--ink)">' + esc(C.brand.title) + '</div><div class="b-spin"></div></div>';
+    document.body.appendChild(b);
+  }
+  function hideBoot() { var b = $("#boot"); if (b) { b.style.transition = ".3s"; b.style.opacity = "0"; setTimeout(function () { b.remove(); }, 300); } }
+
+  function showLock(errMsg) {
+    hideBoot();
+    if ($("#lock")) { if (errMsg) $("#lock-err").textContent = errMsg; return; }
+    var l = document.createElement("div"); l.className = "lock-screen"; l.id = "lock";
+    l.innerHTML =
+      '<div class="lock-card">' +
+        '<div class="lock-logo">' + ICON("lock") + '</div>' +
+        '<h1>' + esc(C.brand.title) + '</h1>' +
+        '<div class="p">' + esc(C.brand.program) + ' · هذه البيانات داخلية ومشفّرة</div>' +
+        '<form id="lock-form">' +
+          '<div class="lock-field"><span class="li">' + ICON("key") + '</span>' +
+            '<input type="password" id="lock-pw" placeholder="كلمة المرور" autocomplete="current-password" autofocus>' +
+            '<button type="button" class="reveal" id="lock-reveal" aria-label="إظهار">' + ICON("eye") + '</button></div>' +
+          '<label class="lock-remember"><input type="checkbox" id="lock-remember"> تذكّرني على هذا الجهاز</label>' +
+          '<div class="lock-err" id="lock-err">' + (errMsg ? esc(errMsg) : "") + '</div>' +
+          '<button type="submit" class="btn primary block" id="lock-btn">' + ICON("unlock") + 'فتح الكتالوج</button>' +
+        '</form>' +
+        '<div class="lock-foot">' + ICON("info") + ' البيانات مشفّرة بمعيار AES‑256. لا يمكن قراءتها دون كلمة المرور الصحيحة.</div>' +
+      '</div>';
+    document.body.appendChild(l);
+    $("#lock-form").addEventListener("submit", function (e) { e.preventDefault(); doUnlock(); });
+    $("#lock-reveal").addEventListener("click", function () {
+      var i = $("#lock-pw"); i.type = i.type === "password" ? "text" : "password"; i.focus();
+    });
+    setTimeout(function () { var i = $("#lock-pw"); if (i) i.focus(); }, 50);
+  }
+  function hideLock() { var l = $("#lock"); if (l) { l.style.transition = ".3s"; l.style.opacity = "0"; setTimeout(function () { l.remove(); }, 300); } }
+
+  function doUnlock() {
+    var pw = $("#lock-pw").value;
+    var remember = $("#lock-remember").checked;
+    if (!pw) return;
+    var btn = $("#lock-btn"); btn.disabled = true; btn.innerHTML = '<span class="b-spin" style="width:18px;height:18px;border-width:2px;margin:0"></span> جارٍ الفتح…';
+    Box.decryptEnvelope(envelope, pw).then(function (cat) {
+      S.catalog = normalizeCatalog(cat); S.password = pw;
+      if (remember) localStorage.setItem("cat_pw", pw); else sessionStorage.setItem("cat_pw", pw);
+      hideLock(); hideBoot(); render();
+      if (S.token) refreshSha();
+    }).catch(function () {
+      btn.disabled = false; btn.innerHTML = ICON("unlock") + "فتح الكتالوج";
+      $("#lock-err").textContent = "كلمة المرور غير صحيحة";
+      var i = $("#lock-pw"); i.value = ""; i.focus();
+    });
+  }
+
+  function boot() {
+    var pref = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    applyTheme(localStorage.getItem("cat_theme") || pref);
+    showBoot();
+    fetchEnvelope().then(function (env) {
+      envelope = env;
+      var pw = sessionStorage.getItem("cat_pw") || localStorage.getItem("cat_pw");
+      if (pw) {
+        Box.decryptEnvelope(envelope, pw).then(function (cat) {
+          S.catalog = normalizeCatalog(cat); S.password = pw;
+          hideBoot(); render(); if (S.token) refreshSha();
+        }).catch(function () { sessionStorage.removeItem("cat_pw"); localStorage.removeItem("cat_pw"); showLock(); });
+      } else { showLock(); }
+    }).catch(function (err) {
+      hideBoot();
+      showLock();
+      $("#lock-err").textContent = "تعذّر تحميل البيانات. تأكد من الاتصال.";
+      console.error(err);
+    });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();
+})();
