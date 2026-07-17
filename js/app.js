@@ -362,21 +362,6 @@
           '<div class="bar"><i style="width:' + pct + '%"></i></div></button>';
       }).join("") + '</div></div>';
 
-    /* charts: stage donut + services by sector bars */
-    var stageData = C.stages.map(function (st) { return { label: st.label, value: countBy("stage", st.key), color: isDark() ? st.colorDark : st.color }; });
-    html += '<div class="section"><div class="two-col">' +
-      '<div class="panel"><div class="panel-head"><div class="si">' + ICON("target") + '</div><h3>توزيع الخدمات حسب المرحلة</h3></div>' +
-        '<div class="donut-wrap">' + Charts.donut(stageData, { size: 178, thickness: 30, centerBottom: "خدمة" }) +
-        '<div class="donut-legend">' + stageData.map(function (d) {
-          var p = Math.round(d.value / total * 100);
-          return '<div class="legend-row" data-act="goto-filter" data-field="stage" data-value="' + attr(C.stages[stageData.indexOf(d)] ? C.stages[stageData.indexOf(d)].key : d.label) + '">' +
-            '<span class="sw" style="background:' + d.color + '"></span><span class="lg-lbl">' + esc(d.label) + '</span>' +
-            '<span class="lg-val">' + d.value + ' · ' + p + '%</span></div>';
-        }).join("") + '</div></div></div>' +
-      '<div class="panel"><div class="panel-head"><div class="si">' + ICON("layers") + '</div><h3>الخدمات حسب القطاع</h3></div>' +
-        barChart(sectors.map(function (s) { return { label: s, value: countBy("sector", s), color: sectorColor(s), field: "sector", value2: s }; })) +
-      '</div></div></div>';
-
     /* sectors cards */
     html += '<div class="section"><div class="section-head"><div class="ttl"><div class="si">' + ICON("layers") + '</div><h2>القطاعات والمراكز</h2></div><span class="sub">' + sectors.length + ' قطاعات</span></div>' +
       '<div class="cards grid-3">' + sectors.map(function (s) {
@@ -388,32 +373,21 @@
       }).join("") + '</div></div>';
 
     /* objectives + categories chips */
-    html += '<div class="section"><div class="two-col">' +
-      '<div class="panel"><div class="panel-head"><div class="si">' + ICON("target") + '</div><h3>الأهداف الاستراتيجية</h3></div>' +
-        '<div class="chip-row">' + C.taxonomy.objectives.map(function (o) {
-          return '<button class="chip" data-act="goto-filter" data-field="objective" data-value="' + attr(o) + '">' + esc(o) + '<span class="cnt">' + countBy("objectives", o) + '</span></button>';
+    html += '<div class="section">' +
+      '<div class="panel" style="margin-bottom:16px"><div class="panel-head"><div class="si">' + ICON("target") + '</div><h3>الأهداف الاستراتيجية</h3></div>' +
+        '<div class="chip-row lg">' + C.taxonomy.objectives.map(function (o) {
+          return '<button class="chip lg" data-act="goto-filter" data-field="objective" data-value="' + attr(o) + '">' + esc(o) + '<span class="cnt">' + countBy("objectives", o) + '</span></button>';
         }).join("") + '</div></div>' +
       '<div class="panel"><div class="panel-head"><div class="si">' + ICON("tag") + '</div><h3>فئات الخدمات</h3></div>' +
-        '<div class="chip-row">' + allValues("category").filter(Boolean).map(function (o) {
-          return '<button class="chip" data-act="goto-filter" data-field="category" data-value="' + attr(o) + '">' + esc(o) + '<span class="cnt">' + countBy("category", o) + '</span></button>';
+        '<div class="chip-row lg">' + allValues("category").filter(Boolean).map(function (o) {
+          return '<button class="chip lg" data-act="goto-filter" data-field="category" data-value="' + attr(o) + '">' + esc(o) + '<span class="cnt">' + countBy("category", o) + '</span></button>';
         }).join("") + '</div></div>' +
-      '</div></div>';
+      '</div>';
 
     return html;
   }
   function depCountForSector(sector) {
     return uniq(services().filter(function (s) { return s.sector === sector; }).map(function (s) { return s.department; })).length;
-  }
-  function barChart(data) {
-    var max = Math.max.apply(null, data.map(function (d) { return d.value; }).concat([1]));
-    data = data.slice().sort(function (a, b) { return b.value - a.value; });
-    return '<div class="hbars">' + data.map(function (d) {
-      var w = Math.round(d.value / max * 100);
-      return '<div class="hbar" data-act="goto-filter" data-field="' + attr(d.field) + '" data-value="' + attr(d.value2) + '" title="' + attr(d.label) + '">' +
-        '<span class="hb-lbl">' + esc(d.label) + '</span>' +
-        '<div class="hb-track"><div class="hb-fill" style="width:' + w + '%;background:' + d.color + '"></div></div>' +
-        '<span class="hb-val">' + d.value + '</span></div>';
-    }).join("") + '</div>';
   }
   function hexA(hex, a) {
     var h = hex.replace("#", ""); if (h.length === 3) h = h.split("").map(function (x) { return x + x; }).join("");

@@ -288,6 +288,9 @@ main { padding-block: 26px 80px; }
 .chip.tone { background: color-mix(in srgb, var(--c,var(--accent)) 12%, var(--surface)); border-color: color-mix(in srgb, var(--c,var(--accent)) 32%, var(--border)); color: color-mix(in srgb, var(--c,var(--accent)) 82%, var(--ink)); }
 .chip.tone.on { background: var(--c,var(--accent)); border-color: var(--c,var(--accent)); color:#fff; }
 .chip.tone.on .cnt { color: rgba(255,255,255,.8); }
+.chip-row.lg { gap: 12px; }
+.chip.lg { padding: 13px 20px; font-size: 14.5px; border-radius: 14px; gap: 10px; }
+.chip.lg .cnt { font-size: 13px; }
 
 /* ---------- Buttons ---------- */
 .btn {
