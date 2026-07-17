@@ -53,7 +53,7 @@
       case "open": I.openService(+id); break;
       case "close-drawer": closeDrawer(); break;
       case "theme": toggleTheme(); break;
-      case "settings": case "editor": openSettings(); break;
+      case "settings": openSettings(); break;
       case "toggle-filters": S.showFilters = !S.showFilters; reRenderView(); break;
       case "filter": toggleFilter(field, value); break;
       case "unfilter": removeFilter(field, value); break;
@@ -69,8 +69,6 @@
       case "manage-rename": manageRename(t.getAttribute("data-value")); break;
       case "manage-delete": manageDelete(t.getAttribute("data-value")); break;
       case "settings-theme": applyTheme(t.getAttribute("data-theme")); render(); openSettings(); break;
-      case "save-token": saveToken(); break;
-      case "clear-token": clearToken(); break;
       case "change-pw": changePassword(); break;
       case "export": exportData(); break;
       case "import": $("#import-file").click(); break;
@@ -169,7 +167,7 @@
       '<form id="svc-form"><div class="modal-body">' + body + '</div>' +
       '<div class="modal-foot"><button type="submit" class="btn primary">' + ICON("check") + (isEdit ? "حفظ التعديلات" : "إضافة الخدمة") + '</button>' +
       '<button type="button" class="btn ghost" id="cancel-form">إلغاء</button>' +
-      (S.token ? '' : '<span class="muted" style="font-size:11.5px;align-self:center">لا يوجد رمز GitHub — سيُحفظ محليًا فقط</span>') + '</div></form>');
+      (S.token ? '' : '<span class="muted" style="font-size:11.5px;align-self:center">تعذّر العثور على صلاحية الكتابة — سيُحفظ محليًا فقط في هذا المتصفح</span>') + '</div></form>');
 
     $("#cancel-form", m).addEventListener("click", closeModal);
     $("[data-act='close-modal-x']", m).addEventListener("click", closeModal);
@@ -283,7 +281,7 @@
         '<input type="text" id="mng-add-in" placeholder="إضافة ' + esc(MANAGE_META[manageTab].label) + '…" style="flex:1;height:40px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13px">' +
         '<button class="btn primary sm" data-act="manage-add">' + ICON("plus") + 'إضافة</button></div>' +
       '<div class="mlist">' + rows + '</div>' +
-      (S.token ? '' : '<p class="form-hint" style="margin-top:12px">' + ICON("info") + ' لا يوجد رمز GitHub — التغييرات محلية فقط حتى تضيف رمزًا من الإعدادات.</p>');
+      (S.token ? '' : '<p class="form-hint" style="margin-top:12px">' + ICON("info") + ' تعذّر العثور على صلاحية الكتابة — التغييرات محلية فقط في هذا المتصفح.</p>');
     var addIn = $("#mng-add-in"); if (addIn) addIn.addEventListener("keydown", function (e) { if (e.key === "Enter") manageAdd(); });
   }
   function manageAdd() {
@@ -319,7 +317,6 @@
    * SETTINGS
    * ===================================================================== */
   function openSettings() {
-    var g = C.github;
     var tokenSet = !!S.token;
     var m = openModal(
       '<div class="modal-head"><div class="mi">' + ICON("gear") + '</div><h2>الإعدادات</h2>' +
@@ -331,16 +328,6 @@
           '<button class="btn ' + (!I.isDark() ? "primary" : "") + '" data-act="settings-theme" data-theme="light">' + ICON("sun") + 'فاتح</button>' +
           '<button class="btn ' + (I.isDark() ? "primary" : "") + '" data-act="settings-theme" data-theme="dark">' + ICON("moon") + 'داكن</button>' +
         '</div>') +
-
-      section("وضع التحرير — رمز GitHub", "key",
-        '<p class="form-hint" style="margin-bottom:10px">لتفعيل الإضافة والتعديل والحذف والحفظ في المستودع، أدخل رمز وصول (Fine-grained token) بصلاحية <b>Contents: Read and write</b> على مستودع <code>' + esc(g.owner + "/" + g.repo) + '</code>. يُحفظ الرمز في هذا المتصفح فقط ولا يُرسل لأي جهة أخرى.</p>' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-          '<input type="password" id="gh-token" placeholder="' + (tokenSet ? "•••••••••• (محفوظ)" : "github_pat_...") + '" style="flex:1;min-width:200px;height:42px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13px">' +
-          '<button class="btn primary" data-act="save-token">' + ICON("check") + 'حفظ الرمز</button>' +
-          (tokenSet ? '<button class="btn danger" data-act="clear-token">' + ICON("trash") + 'إزالة</button>' : '') +
-        '</div>' +
-        '<p class="form-hint" style="margin-top:8px">' + (tokenSet ? '<span style="color:var(--good);font-weight:700">' + ICON("check") + ' وضع التحرير مُفعّل</span>' : 'الوضع الحالي: قراءة فقط') +
-        ' · <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener" style="color:var(--accent);font-weight:700">إنشاء رمز جديد ↗</a></p>') +
 
       (tokenSet ? section("كلمة مرور الكتالوج", "lock",
         '<p class="form-hint" style="margin-bottom:10px">تغيير كلمة المرور يُعيد تشفير البيانات بالكامل ويحفظها في المستودع. أبلغ الفريق بالكلمة الجديدة.</p>' +
@@ -369,20 +356,6 @@
       '<b style="font-size:13.5px">' + esc(title) + '</b></div>' + inner + '</div>';
   }
 
-  function saveToken() {
-    var v = ($("#gh-token") || {}).value; if (v != null) v = v.trim();
-    if (!v) { toast("أدخل الرمز", "err"); return; }
-    localStorage.setItem("cat_ghtoken", v); S.token = v; S.sha = null;
-    toast("جارٍ التحقق من الرمز…", "info");
-    refreshSha().then(function (sha) {
-      if (sha) { toast("تم تفعيل وضع التحرير", "ok"); closeModal(); render(); }
-      else { toast("تعذّر الوصول للمستودع", "err", "تحقق من صلاحيات الرمز"); }
-    });
-  }
-  function clearToken() {
-    localStorage.removeItem("cat_ghtoken"); S.token = null; S.sha = null;
-    toast("تمت إزالة الرمز — قراءة فقط", "info"); closeModal(); render();
-  }
   function changePassword() {
     var a = ($("#pw-new") || {}).value || "", b = ($("#pw-new2") || {}).value || "";
     if (a.length < 6) { toast("كلمة المرور قصيرة (6 أحرف على الأقل)", "err"); return; }
@@ -398,7 +371,9 @@
 
   /* ---------------- Export / Import ---------------- */
   function exportData() {
-    var blob = new Blob([JSON.stringify(S.catalog, null, 2)], { type: "application/json" });
+    /* the plaintext backup file is not encrypted at rest — never include the write token in it */
+    var clean = Object.assign({}, S.catalog); delete clean.writeToken;
+    var blob = new Blob([JSON.stringify(clean, null, 2)], { type: "application/json" });
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
     a.href = url; a.download = "catalog-backup-" + I.todayISO() + ".json";
@@ -431,7 +406,8 @@
   }
   function lockApp() {
     sessionStorage.removeItem("cat_pw"); localStorage.removeItem("cat_pw");
-    S.password = null; S.catalog = null; closeModal(); closeDrawer();
+    S.password = null; S.catalog = null; S.token = null; S.sha = null;
+    closeModal(); closeDrawer();
     showLock();
   }
 
@@ -453,6 +429,13 @@
     cat.refs.representatives = cat.refs.representatives || [];
     cat.taxonomy = cat.taxonomy || C.taxonomy;
     cat.updatedAt = cat.updatedAt || I.todayISO();
+    /* Write access is embedded in the encrypted data itself (never in plain JS),
+     * so anyone who knows the catalog password can edit automatically — no
+     * separate token entry. Carry it forward across saves/imports so a backup
+     * that lacks it (e.g. an exported file, which strips it) doesn't strand
+     * the team without write access after a re-import. */
+    if (cat.writeToken) S.token = cat.writeToken;
+    else if (S.token) cat.writeToken = S.token;
     return cat;
   }
 

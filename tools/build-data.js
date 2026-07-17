@@ -4,23 +4,32 @@
  * The plaintext file is NEVER committed — only the encrypted envelope is.
  *
  * Usage:
- *   node tools/build-data.js <plaintext-catalog.json> <password> [out.enc]
+ *   node tools/build-data.js <plaintext-catalog.json> <password> [out.enc] [--write-token=<github-token>]
+ *
+ * --write-token embeds a GitHub write token INSIDE the encrypted output, so
+ * anyone who later enters the correct password gets automatic edit access
+ * (see tools/set-write-token.js to add/rotate it without the plaintext source).
  * ========================================================================= */
 var fs = require("fs");
 var path = require("path");
 var box = require(path.join(__dirname, "..", "js", "crypto.js"));
 
-var src = process.argv[2];
-var password = process.argv[3];
-var out = process.argv[4] || path.join(__dirname, "..", "data", "catalog.enc");
+var args = process.argv.slice(2).filter(function (a) { return a.indexOf("--write-token=") !== 0; });
+var tokenArg = process.argv.find(function (a) { return a.indexOf("--write-token=") === 0; });
+var writeToken = tokenArg ? tokenArg.slice("--write-token=".length) : null;
+
+var src = args[0];
+var password = args[1];
+var out = args[2] || path.join(__dirname, "..", "data", "catalog.enc");
 
 if (!src || !password) {
-  console.error("Usage: node tools/build-data.js <catalog.json> <password> [out.enc]");
+  console.error("Usage: node tools/build-data.js <catalog.json> <password> [out.enc] [--write-token=<token>]");
   process.exit(1);
 }
 
 var cat = JSON.parse(fs.readFileSync(src, "utf8"));
 cat.refs = cat.refs || { departments: [], owners: [], representatives: [] };
+if (writeToken) cat.writeToken = writeToken;
 
 (async function () {
   var env = await box.encryptJSON(cat, password);

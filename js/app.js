@@ -12,7 +12,7 @@
     catalog: null,
     sha: null,
     password: null,
-    token: localStorage.getItem("cat_ghtoken") || null,
+    token: null, /* extracted from the decrypted catalog itself — see normalizeCatalog() in app-ui.js */
     view: "dashboard",
     search: "",
     sort: "title",
@@ -295,15 +295,12 @@
   }
 
   function topbar() {
-    var editor = !!S.token;
     return '<header class="topbar"><div class="wrap topbar-inner">' +
       '<div class="brand"><div class="brand-logo">' + ICON("briefcase") + '</div>' +
       '<div class="brand-txt"><b>' + esc(C.brand.title) + '</b><span>' + esc(C.brand.program) + " · " + esc(C.brand.year) + '</span></div></div>' +
       '<div class="topsearch"><label class="sr-only" for="top-q">بحث</label>' + ICON("search") +
         '<input id="top-q" type="search" placeholder="ابحث في الخدمات…" value="' + attr(S.search) + '"></div>' +
       '<div class="topbar-spacer"></div>' +
-      '<button class="editor-pill ' + (editor ? "live" : "") + '" data-act="editor" title="وضع التحرير">' +
-        ICON(editor ? "unlock" : "lock") + (editor ? "وضع التحرير" : "قراءة فقط") + '</button>' +
       '<button class="icon-btn" data-act="theme" title="المظهر">' + ICON(isDark() ? "sun" : "moon") + '</button>' +
       '<button class="icon-btn" data-act="settings" title="الإعدادات">' + ICON("gear") + '</button>' +
       '</div></header>';
