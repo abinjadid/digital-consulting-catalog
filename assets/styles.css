@@ -374,6 +374,7 @@ main { padding-block: 26px 80px; }
   background: color-mix(in srgb, var(--c) 13%, transparent); color: color-mix(in srgb, var(--c) 84%, var(--ink)); border:1px solid color-mix(in srgb, var(--c) 22%, transparent);
 }
 .badge .bdot { width:7px; height:7px; border-radius:50%; background:var(--c); }
+.badge svg { width:12px; height:12px; flex: none; }
 .badge.plain { background: var(--surface-2); color: var(--ink-2); border-color: var(--border); }
 
 /* ---------- Empty ---------- */

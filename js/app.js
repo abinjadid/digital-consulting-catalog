@@ -435,7 +435,6 @@
       '</div>' +
       '<h3>' + esc(s.title) + '</h3>' +
       '<p class="desc">' + esc(s.description || "—") + '</p>' +
-      (s.category ? '<div class="badges"><span class="badge plain">' + ICON("tag") + esc(s.category) + '</span></div>' : '') +
       '<div class="foot"><div class="who">' +
         '<span class="avatar" style="background:' + avatarColor(s.owner) + '">' + esc(initials(s.owner)) + '</span>' +
         '<div class="txt"><b>' + esc(s.owner || "—") + '</b><span>مالك الخدمة</span></div></div>' +
