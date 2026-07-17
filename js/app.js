@@ -432,14 +432,18 @@
       '<div class="badges">' +
         '<span class="badge" style="--c:' + col + '"><span class="bdot"></span>' + esc(shortSector(s.sector)) + '</span>' +
         (s.stage ? '<span class="badge" style="--c:' + stc + '">' + esc(s.stage) + '</span>' : '') +
+        (s.sla ? '<span class="badge plain">' + ICON("clock") + esc(s.sla) + '</span>' : '') +
       '</div>' +
       '<h3>' + esc(s.title) + '</h3>' +
       '<p class="desc">' + esc(s.description || "—") + '</p>' +
-      '<div class="foot"><div class="who">' +
-        '<span class="avatar" style="background:' + avatarColor(s.owner) + '">' + esc(initials(s.owner)) + '</span>' +
-        '<div class="txt"><b>' + esc(s.owner || "—") + '</b><span>مالك الخدمة</span></div></div>' +
-        (s.sla ? '<span class="sla">' + ICON("clock") + esc(s.sla) + '</span>' : '') +
+      '<div class="foot">' +
+        person(s.owner, "مالك الخدمة") +
+        (s.representative ? person(s.representative, "ممثل الخدمة") : "") +
       '</div></div></article>';
+  }
+  function person(name, role) {
+    return '<div class="who"><span class="avatar" style="background:' + avatarColor(name) + '">' + esc(initials(name)) + '</span>' +
+      '<div class="txt"><b>' + esc(name || "—") + '</b><span>' + esc(role) + '</span></div></div>';
   }
   function shortSector(s) { return String(s || "").replace(/^قطاع\s+/, "").replace(/^مركز\s+/, "مركز "); }
 

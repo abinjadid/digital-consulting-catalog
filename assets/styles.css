@@ -358,13 +358,12 @@ main { padding-block: 26px 80px; }
 .svc-card .badges { display:flex; flex-wrap:wrap; gap:7px; }
 .svc-card h3 { font-size:14.5px; font-weight:700; line-height:1.5; letter-spacing:-.2px; }
 .svc-card .desc { font-size:12.5px; color:var(--muted); line-height:1.6; display:-webkit-box; -webkit-line-clamp:2; line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.svc-card .foot { display:flex; align-items:center; gap:10px; padding-top:12px; border-top:1px solid var(--border); margin-top:auto; }
-.svc-card .foot .who { display:flex; align-items:center; gap:8px; min-width:0; flex:1; }
+.svc-card .foot { display:flex; flex-direction:column; gap:9px; padding-top:12px; border-top:1px solid var(--border); margin-top:auto; }
+.svc-card .foot .who { display:flex; align-items:center; gap:8px; min-width:0; }
+.svc-card .foot .who .avatar { width:26px; height:26px; font-size:10px; flex:none; }
 .svc-card .foot .who .txt { min-width:0; }
 .svc-card .foot .who .txt b { display:block; font-size:12px; font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .svc-card .foot .who .txt span { font-size:10.5px; color:var(--muted); }
-.svc-card .sla { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; color:var(--ink-2); background:var(--surface-2); padding:5px 10px; border-radius:var(--radius-pill); white-space:nowrap; }
-.svc-card .sla svg { width:13px; height:13px; color:var(--muted); }
 
 .avatar { width:30px; height:30px; border-radius:50%; flex:none; display:grid; place-items:center; font-size:11px; font-weight:700; color:#fff; letter-spacing:-.5px; }
 
