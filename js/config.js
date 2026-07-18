@@ -73,6 +73,11 @@
     palette: {
       light: ["#2a78d6", "#1baf7a", "#eda100", "#008300", "#4a3aa7", "#e34948", "#e87ba4", "#eb6834"],
       dark:  ["#3987e5", "#199e70", "#c98500", "#12b866", "#9085e9", "#e66767", "#d55181", "#d95926"]
+    },
+
+    /* ---- Manual color overrides for specific sectors (takes priority over the palette) ---- */
+    sectorColorOverrides: {
+      "قطاع الاستراتيجية والشراكات": { light: "#0d9488", dark: "#2dd4bf" }
     }
   };
 

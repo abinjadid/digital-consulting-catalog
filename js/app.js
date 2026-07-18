@@ -48,6 +48,8 @@
   /* ---------------- Colors ---------------- */
   function palette() { return isDark() ? C.palette.dark : C.palette.light; }
   function sectorColor(sector) {
+    var override = C.sectorColorOverrides && C.sectorColorOverrides[sector];
+    if (override) return isDark() ? override.dark : override.light;
     var idx = S.sectorIndex[sector];
     if (idx == null) idx = Object.keys(S.sectorIndex).length;
     return palette()[idx % palette().length];
