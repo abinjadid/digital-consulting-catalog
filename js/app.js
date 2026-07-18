@@ -418,7 +418,7 @@
   /* ---------------- Filter panel ---------------- */
   function filterPanel() {
     var groups = "";
-    groups += chipFilterGroup("sector", "layers", "القطاع", uniqueSectors(), true);
+    groups += chipFilterGroup("sector", "layers", "القطاع", uniqueSectors().slice().sort(function (a, b) { return countBy("sector", b) - countBy("sector", a); }), true);
     if (!S.filters.sector.length) {
       groups += scopeHint();
     } else {
