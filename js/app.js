@@ -310,8 +310,8 @@
     /* hero */
     var html = '<div class="hero">' +
       '<span class="hero-badge">' + ICON("sparkles") + 'برنامج الاستشارات الرقمية ' + esc(C.brand.year) + '</span>' +
-      '<h1>' + esc(C.brand.title) + '</h1>' +
-      '<p>منصة موحّدة لاستعراض بطاقات الخدمات الاستشارية وملاكها وممثليها عبر القطاعات والإدارات العامة، مصنّفة حسب الأهداف والفئات ومراحل التحول الرقمي.</p>' +
+      '<h1>' + esc(C.brand.title) + ' - استخدام داخلي</h1>' +
+      '<p>نظام ذكي لإدارة بطاقات الخدمات الاستشارية وملاكها وممثليها على مستوى هيئة الحكومة الرقمية.</p>' +
       '<div class="hero-meta">' +
         '<span class="hm">' + ICON("briefcase") + esc(svc.length) + ' خدمة استشارية</span>' +
         '<span class="hm">' + ICON("layers") + esc(sectors.length) + ' قطاعات</span>' +
