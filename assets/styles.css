@@ -302,7 +302,7 @@ main { padding-block: 26px 80px; }
 .scope-hint b { display:block; font-size:12.5px; font-weight:700; color:var(--ink-2); }
 .scope-hint span { font-size:11.5px; }
 
-.team-list { display:flex; flex-direction:column; gap:10px; }
+.team-list { display:grid; grid-template-columns: repeat(auto-fill, minmax(230px,1fr)); gap:10px; align-items:start; }
 .team-row { background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:9px 11px; }
 .team-owner { display:flex; align-items:center; gap:9px; width:100%; text-align:start; }
 .team-owner .avatar { width:26px; height:26px; font-size:10px; flex:none; }
