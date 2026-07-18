@@ -189,16 +189,18 @@ main { padding-block: 26px 80px; }
 .hero-meta .hm svg { width:15px; height:15px; opacity:.9; }
 
 /* ---------- Stat tiles ---------- */
-.stat-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 14px; }
+.stat-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap: 10px; }
 .stat {
-  background: var(--surface); border:1px solid var(--border); border-radius: var(--radius-lg);
-  padding: 17px 18px; box-shadow: var(--shadow-xs); position:relative; overflow:hidden; transition:.18s;
+  display:flex; align-items:center; gap:10px;
+  background: var(--surface); border:1px solid var(--border); border-radius: var(--radius);
+  padding: 11px 13px; box-shadow: var(--shadow-xs); position:relative; overflow:hidden; transition:.18s;
 }
 .stat:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: var(--border-2); }
-.stat .si { width:38px; height:38px; border-radius:11px; display:grid; place-items:center; margin-bottom:12px; }
-.stat .si svg { width:20px; height:20px; }
-.stat .val { font-size: 30px; font-weight: 700; letter-spacing:-1px; line-height:1; font-variant-numeric: tabular-nums; }
-.stat .lbl { color: var(--muted); font-size: 12.5px; font-weight:500; margin-top:6px; }
+.stat .si { width:32px; height:32px; border-radius:9px; display:grid; place-items:center; flex:none; }
+.stat .si svg { width:16px; height:16px; }
+.stat .txt { min-width:0; }
+.stat .val { font-size: 19px; font-weight: 700; letter-spacing:-.5px; line-height:1.1; font-variant-numeric: tabular-nums; }
+.stat .lbl { color: var(--muted); font-size: 11px; font-weight:500; margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 /* ---------- Cards grid generic ---------- */
 .cards { display: grid; gap: 14px; }
@@ -215,15 +217,13 @@ main { padding-block: 26px 80px; }
 }
 .stage-card::before { content:""; position:absolute; inset-inline-start:0; top:0; bottom:0; width:5px; background: var(--c); }
 .stage-card:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: color-mix(in srgb, var(--c) 40%, var(--border)); }
-.stage-card .top { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; }
+.stage-card .top { display:flex; align-items:center; margin-bottom:12px; }
 .stage-card .dot { width:34px; height:34px; border-radius:10px; display:grid; place-items:center; background: color-mix(in srgb, var(--c) 15%, transparent); color:var(--c); }
 .stage-card .dot svg { width:19px; height:19px; }
-.stage-card .pct { font-size:13px; font-weight:700; color:var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); padding:3px 10px; border-radius: var(--radius-pill); }
 .stage-card h3 { font-size:16px; font-weight:700; display:flex; align-items:center; gap:8px; }
-.stage-card .cnt { font-size:13px; color:var(--ink-2); font-weight:600; margin:2px 0 10px; }
+.stage-card .cnt { font-size:13px; color:var(--ink-2); font-weight:600; margin:2px 0 0; }
 .stage-card .cnt b { color:var(--c); font-size:20px; font-variant-numeric:tabular-nums; }
-.stage-card p { font-size:12.5px; color:var(--muted); line-height:1.6; }
-.stage-card .bar { height:6px; border-radius:var(--radius-pill); background: var(--surface-3); margin-top:14px; overflow:hidden; }
+.stage-card .bar { height:6px; border-radius:var(--radius-pill); background: var(--surface-3); margin-top:12px; overflow:hidden; }
 .stage-card .bar > i { display:block; height:100%; border-radius:var(--radius-pill); background: var(--c); }
 
 /* ---------- Sector cards ---------- */

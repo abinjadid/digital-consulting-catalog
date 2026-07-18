@@ -339,7 +339,7 @@
     ];
     html += '<div class="section"><div class="stat-grid">' + stats.map(function (s) {
       return '<div class="stat"><div class="si" style="background:' + hexA(s.c, .13) + ';color:' + s.c + '">' + ICON(s.icon) + '</div>' +
-        '<div class="val">' + esc(s.val) + '</div><div class="lbl">' + esc(s.lbl) + '</div></div>';
+        '<div class="txt"><div class="val">' + esc(s.val) + '</div><div class="lbl">' + esc(s.lbl) + '</div></div></div>';
     }).join("") + '</div></div>';
 
     /* stages */
@@ -351,16 +351,15 @@
         var pct = Math.round(cnt / total * 100);
         var col = isDark() ? st.colorDark : st.color;
         return '<button class="stage-card" style="--c:' + col + '" data-act="goto-filter" data-field="stage" data-value="' + attr(st.key) + '">' +
-          '<div class="top"><div class="dot">' + ICON("flag") + '</div><span class="pct">' + pct + '%</span></div>' +
+          '<div class="top"><div class="dot">' + ICON("flag") + '</div></div>' +
           '<h3>' + esc(st.label) + '</h3>' +
           '<div class="cnt"><b>' + cnt + '</b> خدمة</div>' +
-          '<p>' + esc(st.desc) + '</p>' +
           '<div class="bar"><i style="width:' + pct + '%"></i></div></button>';
       }).join("") + '</div></div>';
 
     /* sectors cards */
     html += '<div class="section"><div class="section-head"><div class="ttl"><div class="si">' + ICON("layers") + '</div><h2>القطاعات والمراكز</h2></div><span class="sub">' + sectors.length + ' قطاعات</span></div>' +
-      '<div class="cards grid-3">' + sectors.map(function (s) {
+      '<div class="cards grid-3">' + sectors.slice().sort(function (a, b) { return countBy("sector", b) - countBy("sector", a); }).map(function (s) {
         var col = sectorColor(s);
         return '<button class="sector-card" style="--c:' + col + '" data-act="goto-filter" data-field="sector" data-value="' + attr(s) + '">' +
           '<div class="ci">' + ICON("building2") + '</div>' +
@@ -457,7 +456,7 @@
     groups += chipFilterGroup("stage", "flag", "مرحلة التحول", C.stages.map(function (s) { return s.key; }), true);
     groups += chipFilterGroup("objective", "target", "الهدف الاستراتيجي", C.taxonomy.objectives);
     groups += chipFilterGroup("category", "tag", "الفئة", allValues("category").filter(Boolean));
-    groups += chipFilterGroup("beneficiary", "users", "المستفيدون", C.taxonomy.beneficiaries);
+    groups += chipFilterGroup("beneficiary", "users", "المستفيدون", C.taxonomy.beneficiaries.filter(function (b) { return countBy("beneficiaries", b) > 0; }));
     return '<div class="filter-panel">' + groups +
       (activeFilterCount() ? '<div style="padding-top:14px;margin-top:4px;border-top:1px solid var(--border)"><button class="btn ghost sm" data-act="clear-filters">' + ICON("refresh") + 'مسح كل الفلاتر</button></div>' : '') +
       '</div>';
