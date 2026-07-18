@@ -429,7 +429,6 @@
     groups += chipFilterGroup("stage", "flag", "مرحلة التحول", C.stages.map(function (s) { return s.key; }), true);
     groups += chipFilterGroup("objective", "target", "الهدف الاستراتيجي", C.taxonomy.objectives);
     groups += chipFilterGroup("category", "tag", "الفئة", allValues("category").filter(Boolean));
-    groups += chipFilterGroup("beneficiary", "users", "المستفيدون", C.taxonomy.beneficiaries.filter(function (b) { return countBy("beneficiaries", b) > 0; }));
     return '<div class="filter-panel">' + groups +
       (activeFilterCount() ? '<div style="padding-top:14px;margin-top:4px;border-top:1px solid var(--border)"><button class="btn ghost sm" data-act="clear-filters">' + ICON("refresh") + 'مسح كل الفلاتر</button></div>' : '') +
       '</div>';
