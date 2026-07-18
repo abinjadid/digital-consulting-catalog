@@ -13,7 +13,6 @@
     sha: null,
     password: null,
     token: null, /* extracted from the decrypted catalog itself — see normalizeCatalog() in app-ui.js */
-    view: "dashboard",
     search: "",
     sort: "title",
     showFilters: true,
@@ -271,15 +270,7 @@
     buildSectorIndex();
     var od = $("#drawer"), oo = $("#drawer-ov"); if (od) od.remove(); if (oo) oo.remove();
     var app = $("#app");
-    app.innerHTML =
-      topbar() +
-      '<div class="wrap">' +
-        '<div class="nav">' +
-          navTab("dashboard", "dashboard", "اللوحة الرئيسية") +
-          navTab("services", "grid", "الخدمات") +
-        '</div>' +
-      '</div>' +
-      '<main><div class="wrap" id="view">' + (S.view === "dashboard" ? dashboardView() : servicesView()) + '</div></main>';
+    app.innerHTML = topbar() + '<main><div class="wrap" id="view">' + pageView() + '</div></main>';
     if (S.selected) drawer(S.selected);
   }
   function reRenderView() {
@@ -287,8 +278,7 @@
     var act = document.activeElement || {};
     var fId = act.id || null;
     var caret = null; try { caret = act.selectionStart; } catch (e) {}
-    v.innerHTML = S.view === "dashboard" ? dashboardView() : servicesView();
-    $all(".nav-tab").forEach(function (t) { t.classList.toggle("active", t.getAttribute("data-view") === S.view); });
+    v.innerHTML = pageView();
     var back = fId ? document.getElementById(fId) : null;
     if (back) { back.focus(); if (caret != null) { try { back.setSelectionRange(caret, caret); } catch (e) {} } }
   }
@@ -304,14 +294,11 @@
       '<button class="icon-btn" data-act="settings" title="الإعدادات">' + ICON("gear") + '</button>' +
       '</div></header>';
   }
-  function navTab(view, icon, label) {
-    return '<button class="nav-tab ' + (S.view === view ? "active" : "") + '" data-act="nav" data-view="' + view + '">' + ICON(icon) + esc(label) + '</button>';
-  }
 
   /* =====================================================================
-   * DASHBOARD VIEW
+   * PAGE — dashboard + services merged into a single scrollable page
    * ===================================================================== */
-  function dashboardView() {
+  function pageView() {
     var svc = services();
     var sectors = uniqueSectors();
     var deps = allValues("department");
@@ -367,44 +354,19 @@
           '<span class="cbadge">' + countBy("sector", s) + '</span></button>';
       }).join("") + '</div></div>';
 
-    /* objectives + categories chips */
-    html += '<div class="section">' +
-      '<div class="panel" style="margin-bottom:16px"><div class="panel-head"><div class="si">' + ICON("target") + '</div><h3>الأهداف الاستراتيجية</h3></div>' +
-        '<div class="chip-row lg">' + C.taxonomy.objectives.map(function (o) {
-          return '<button class="chip lg" data-act="goto-filter" data-field="objective" data-value="' + attr(o) + '">' + esc(o) + '<span class="cnt">' + countBy("objectives", o) + '</span></button>';
-        }).join("") + '</div></div>' +
-      '<div class="panel"><div class="panel-head"><div class="si">' + ICON("tag") + '</div><h3>فئات الخدمات</h3></div>' +
-        '<div class="chip-row lg">' + allValues("category").filter(Boolean).map(function (o) {
-          return '<button class="chip lg" data-act="goto-filter" data-field="category" data-value="' + attr(o) + '">' + esc(o) + '<span class="cnt">' + countBy("category", o) + '</span></button>';
-        }).join("") + '</div></div>' +
-      '</div>';
-
-    return html;
-  }
-  function depCountForSector(sector) {
-    return uniq(services().filter(function (s) { return s.sector === sector; }).map(function (s) { return s.department; })).length;
-  }
-  function hexA(hex, a) {
-    var h = hex.replace("#", ""); if (h.length === 3) h = h.split("").map(function (x) { return x + x; }).join("");
-    var r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16);
-    return "rgba(" + r + "," + g + "," + b + "," + a + ")";
-  }
-
-  /* =====================================================================
-   * SERVICES VIEW
-   * ===================================================================== */
-  function servicesView() {
+    /* services — merged directly under the sectors section (single page) */
     var list = filtered();
-    var html = '<div class="svc-toolbar">' +
-      '<div class="svc-search">' + ICON("search") + '<input id="svc-q" type="search" placeholder="ابحث بالاسم أو الوصف أو المالك…" value="' + attr(S.search) + '"></div>' +
-      '<button class="btn ' + (S.showFilters ? "primary" : "") + ' sm" data-act="toggle-filters">' + ICON("filter") + 'الفلاتر' + (activeFilterCount() ? ' (' + activeFilterCount() + ')' : '') + '</button>' +
-      '<select class="select" id="svc-sort">' +
-        opt("title", "الاسم", S.sort) + opt("sector", "القطاع", S.sort) + opt("stage", "المرحلة", S.sort) + opt("updated", "آخر تحديث", S.sort) +
-      '</select>' +
-      '<span class="count-pill"><b>' + list.length + '</b> من ' + services().length + ' خدمة</span>' +
-      '<div class="topbar-spacer"></div>' +
-      (S.token ? '<button class="btn sm" data-act="manage">' + ICON("list") + 'إدارة القوائم</button>' +
-                 '<button class="btn primary sm" data-act="add-service">' + ICON("plus") + 'إضافة خدمة</button>' : '') +
+    html += '<div class="section" id="svc-anchor"><div class="section-head"><div class="ttl"><div class="si">' + ICON("grid") + '</div><h2>بطاقات الخدمات</h2></div><span class="sub">تصفّح جميع الخدمات، أو صفِّها حسب القطاع والفريق والتصنيف</span></div>' +
+      '<div class="svc-toolbar">' +
+        '<div class="svc-search">' + ICON("search") + '<input id="svc-q" type="search" placeholder="ابحث بالاسم أو الوصف أو المالك…" value="' + attr(S.search) + '"></div>' +
+        '<button class="btn ' + (S.showFilters ? "primary" : "") + ' sm" data-act="toggle-filters">' + ICON("filter") + 'الفلاتر' + (activeFilterCount() ? ' (' + activeFilterCount() + ')' : '') + '</button>' +
+        '<select class="select" id="svc-sort">' +
+          opt("title", "الاسم", S.sort) + opt("sector", "القطاع", S.sort) + opt("stage", "المرحلة", S.sort) + opt("updated", "آخر تحديث", S.sort) +
+        '</select>' +
+        '<span class="count-pill"><b>' + list.length + '</b> من ' + services().length + ' خدمة</span>' +
+        '<div class="topbar-spacer"></div>' +
+        (S.token ? '<button class="btn sm" data-act="manage">' + ICON("list") + 'إدارة القوائم</button>' +
+                   '<button class="btn primary sm" data-act="add-service">' + ICON("plus") + 'إضافة خدمة</button>' : '') +
       '</div>';
 
     if (S.showFilters) html += filterPanel();
@@ -415,7 +377,17 @@
     } else {
       html += '<div class="cards grid-3">' + list.map(serviceCard).join("") + '</div>';
     }
+    html += '</div>';
+
     return html;
+  }
+  function depCountForSector(sector) {
+    return uniq(services().filter(function (s) { return s.sector === sector; }).map(function (s) { return s.department; })).length;
+  }
+  function hexA(hex, a) {
+    var h = hex.replace("#", ""); if (h.length === 3) h = h.split("").map(function (x) { return x + x; }).join("");
+    var r = parseInt(h.substr(0, 2), 16), g = parseInt(h.substr(2, 2), 16), b = parseInt(h.substr(4, 2), 16);
+    return "rgba(" + r + "," + g + "," + b + "," + a + ")";
   }
   function opt(v, label, cur) { return '<option value="' + v + '"' + (cur === v ? " selected" : "") + '>' + esc(label) + '</option>'; }
 

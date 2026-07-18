@@ -148,20 +148,10 @@ body {
 .icon-btn:hover { background: var(--surface-3); color: var(--ink); border-color: var(--border-2); transform: translateY(-1px); }
 .icon-btn.on { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
 
-/* ---------- Tabs nav ---------- */
-.nav { display: flex; gap: 6px; padding: 10px 0 0; }
-.nav-tab {
-  display: inline-flex; align-items: center; gap: 8px; padding: 9px 16px 12px;
-  color: var(--ink-2); font-weight: 600; font-size: 13.5px; position: relative;
-  border-bottom: 2.5px solid transparent; transition: .15s;
-}
-.nav-tab svg { width: 17px; height: 17px; }
-.nav-tab:hover { color: var(--ink); }
-.nav-tab.active { color: var(--accent); border-color: var(--accent); }
-
 /* ---------- Page ---------- */
 main { padding-block: 26px 80px; }
 .section { margin-bottom: 34px; }
+#svc-anchor { scroll-margin-top: 84px; }
 .section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; }
 .section-head .ttl { display: flex; align-items: center; gap: 10px; }
 .section-head h2 { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
@@ -534,8 +524,6 @@ main { padding-block: 26px 80px; }
   .brand-txt span { display:none; }
   .form-grid { grid-template-columns: 1fr; }
   .hero { padding:24px 20px; }
-  .nav { overflow-x:auto; -webkit-overflow-scrolling:touch; }
-  .nav-tab { white-space:nowrap; }
   .drawer { width:calc(100% - 24px); max-height:92vh; }
   .modal-foot, .drawer-foot { flex-wrap:wrap; }
 }

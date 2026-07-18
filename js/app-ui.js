@@ -49,7 +49,6 @@
     var id = t.getAttribute("data-id");
 
     switch (act) {
-      case "nav": S.view = t.getAttribute("data-view"); S.selected = null; closeDrawer(); reRenderView(); window.scrollTo({ top: 0, behavior: "smooth" }); break;
       case "open": I.openService(+id); break;
       case "close-drawer": closeDrawer(); break;
       case "theme": toggleTheme(); break;
@@ -100,8 +99,10 @@
   function gotoFilter(field, value) {
     for (var k in S.filters) S.filters[k] = [];
     if (S.filters[field]) S.filters[field] = [value];
-    S.view = "services"; S.showFilters = true; S.selected = null; closeDrawer();
-    render(); window.scrollTo({ top: 0, behavior: "smooth" });
+    S.showFilters = true; S.selected = null; closeDrawer();
+    render();
+    var anchor = document.getElementById("svc-anchor");
+    if (anchor) anchor.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
   /* =====================================================================
