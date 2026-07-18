@@ -329,21 +329,6 @@
         '<div class="txt"><div class="val">' + esc(s.val) + '</div><div class="lbl">' + esc(s.lbl) + '</div></div></div>';
     }).join("") + '</div></div>';
 
-    /* stages */
-    var total = svc.length || 1;
-    html += '<div class="section"><div class="section-head"><div class="ttl"><div class="si">' + ICON("layers") + '</div>' +
-      '<h2>مراحل التحول الرقمي</h2></div><span class="sub">اضغط أي مرحلة لتصفية الخدمات</span></div>' +
-      '<div class="stage-grid">' + C.stages.map(function (st) {
-        var cnt = countBy("stage", st.key);
-        var pct = Math.round(cnt / total * 100);
-        var col = isDark() ? st.colorDark : st.color;
-        return '<button class="stage-card" style="--c:' + col + '" data-act="goto-filter" data-field="stage" data-value="' + attr(st.key) + '">' +
-          '<div class="top"><div class="dot">' + ICON("flag") + '</div></div>' +
-          '<h3>' + esc(st.label) + '</h3>' +
-          '<div class="cnt"><b>' + cnt + '</b> خدمة</div>' +
-          '<div class="bar"><i style="width:' + pct + '%"></i></div></button>';
-      }).join("") + '</div></div>';
-
     /* sectors cards */
     html += '<div class="section"><div class="section-head"><div class="ttl"><div class="si">' + ICON("layers") + '</div><h2>القطاعات والمراكز</h2></div><span class="sub">' + sectors.length + ' قطاعات</span></div>' +
       '<div class="cards grid-3">' + sectors.slice().sort(function (a, b) { return countBy("sector", b) - countBy("sector", a); }).map(function (s) {
@@ -352,6 +337,20 @@
           '<div class="ci">' + ICON("building2") + '</div>' +
           '<div class="meta"><b>' + esc(s) + '</b><span>' + depCountForSector(s) + ' إدارات · ' + countBy("sector", s) + ' خدمات</span></div>' +
           '<span class="cbadge">' + countBy("sector", s) + '</span></button>';
+      }).join("") + '</div></div>';
+
+    /* stages — same compact card style as sectors, for a unified look */
+    var total = svc.length || 1;
+    html += '<div class="section"><div class="section-head"><div class="ttl"><div class="si">' + ICON("flag") + '</div>' +
+      '<h2>مراحل التحول الرقمي</h2></div><span class="sub">اضغط أي مرحلة لتصفية الخدمات</span></div>' +
+      '<div class="cards grid-3">' + C.stages.map(function (st) {
+        var cnt = countBy("stage", st.key);
+        var pct = Math.round(cnt / total * 100);
+        var col = isDark() ? st.colorDark : st.color;
+        return '<button class="sector-card" style="--c:' + col + '" data-act="goto-filter" data-field="stage" data-value="' + attr(st.key) + '">' +
+          '<div class="ci">' + ICON("flag") + '</div>' +
+          '<div class="meta"><b>' + esc(st.label) + '</b><span>' + pct + '% من الخدمات</span></div>' +
+          '<span class="cbadge">' + cnt + '</span></button>';
       }).join("") + '</div></div>';
 
     /* services — merged directly under the sectors section (single page) */
