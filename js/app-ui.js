@@ -12,6 +12,8 @@
 
   var envelope = null;
   var manageTab = "department";
+  var manageSearch = "";
+  var manageEditing = null;
 
   /* ---------------- Theme ---------------- */
   function applyTheme(t) {
@@ -19,23 +21,6 @@
     localStorage.setItem("cat_theme", t);
   }
   function toggleTheme() { applyTheme(I.isDark() ? "light" : "dark"); if (S.catalog) render(); }
-
-  /* ---------------- Prompt dialog ---------------- */
-  function promptDialog(opts) {
-    return new Promise(function (resolve) {
-      var m = openModal(
-        '<div class="modal-head"><div class="mi">' + ICON(opts.icon || "edit") + '</div><h2>' + esc(opts.title) + '</h2></div>' +
-        '<div class="modal-body"><div class="form-row full"><label>' + esc(opts.label || "") + '</label>' +
-        '<input type="text" id="prompt-in" value="' + attr(opts.value || "") + '" placeholder="' + attr(opts.placeholder || "") + '"></div></div>' +
-        '<div class="modal-foot"><button class="btn primary" data-ok>' + esc(opts.confirm || "حفظ") + '</button>' +
-        '<button class="btn ghost" data-cancel>إلغاء</button></div>', { sm: true });
-      var input = $("#prompt-in", m); input.focus(); input.select();
-      function ok() { var v = input.value.trim(); closeModal(); resolve(v || null); }
-      $("[data-ok]", m).addEventListener("click", ok);
-      $("[data-cancel]", m).addEventListener("click", function () { closeModal(); resolve(null); });
-      input.addEventListener("keydown", function (e) { if (e.key === "Enter") ok(); });
-    });
-  }
 
   /* =====================================================================
    * EVENT DELEGATION
@@ -64,9 +49,11 @@
       case "delete-service": deleteService(+id); break;
       case "manage": openManage(); break;
       case "chk-toggle": t.classList.toggle("on"); break;
-      case "manage-tab": manageTab = t.getAttribute("data-tab"); renderManage(); break;
+      case "manage-tab": manageTab = t.getAttribute("data-tab"); manageSearch = ""; manageEditing = null; renderManage(); break;
       case "manage-add": manageAdd(); break;
-      case "manage-rename": manageRename(t.getAttribute("data-value")); break;
+      case "manage-edit-start": manageEditing = t.getAttribute("data-value"); renderManageList(); break;
+      case "manage-edit-save": manageEditSave(); break;
+      case "manage-edit-cancel": manageEditing = null; renderManageList(); break;
       case "manage-delete": manageDelete(t.getAttribute("data-value")); break;
       case "settings-theme": applyTheme(t.getAttribute("data-theme")); render(); openSettings(); break;
       case "change-pw": changePassword(); break;
@@ -81,6 +68,7 @@
   document.addEventListener("input", function (e) {
     var el = e.target;
     if (el.id === "top-q" || el.id === "svc-q") { S.search = el.value; reRenderView(); }
+    else if (el.id === "mng-search") { manageSearch = el.value; renderManageList(); }
   });
 
   document.addEventListener("change", function (e) {
@@ -331,54 +319,100 @@
     representative: { label: "ممثلو الخدمات", icon: "users", refKey: "representatives" }
   };
   function openManage() {
+    manageSearch = ""; manageEditing = null;
     openModal(
       '<div class="modal-head"><div class="mi">' + ICON("list") + '</div><h2>إدارة القوائم</h2>' +
       '<button class="icon-btn" id="mng-close" style="margin-inline-start:auto">' + ICON("close") + '</button></div>' +
-      '<div class="modal-body"><div id="manage-body"></div></div>');
+      '<div class="modal-body manage-body"><div id="manage-shell"></div></div>');
     $("#mng-close").addEventListener("click", closeModal);
     renderManage();
   }
-  function renderManage() {
-    var body = $("#manage-body"); if (!body) return;
-    var tabs = Object.keys(MANAGE_META).map(function (k) {
-      return '<button class="mtab ' + (manageTab === k ? "on" : "") + '" data-act="manage-tab" data-tab="' + k + '">' + ICON(MANAGE_META[k].icon) + ' ' + esc(MANAGE_META[k].label) + '</button>';
-    }).join("");
-    var vals = allValues(manageTab).filter(Boolean).sort(function (a, b) { return a.localeCompare(b, "ar"); });
-    var rows = vals.length ? vals.map(function (v) {
-      var used = usageCount(manageTab, v);
-      return '<div class="mrow"><div class="mtxt"><b>' + esc(v) + '</b><span>' + (used ? used + " خدمة" : "غير مستخدمة") + '</span></div>' +
-        '<span class="usage">' + used + '</span><div class="acts">' +
-        '<button class="mini-btn" data-act="manage-rename" data-value="' + attr(v) + '" title="إعادة تسمية">' + ICON("edit") + '</button>' +
-        '<button class="mini-btn danger" data-act="manage-delete" data-value="' + attr(v) + '" title="حذف">' + ICON("trash") + '</button>' +
-        '</div></div>';
-    }).join("") : '<div class="empty" style="padding:30px"><p>لا توجد عناصر بعد.</p></div>';
 
-    body.innerHTML =
-      '<div class="manage-tabs">' + tabs + '</div>' +
-      '<div style="display:flex;gap:8px;margin-bottom:14px">' +
-        '<input type="text" id="mng-add-in" placeholder="إضافة ' + esc(MANAGE_META[manageTab].label) + '…" style="flex:1;height:40px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13px">' +
+  /* Full modal shell — rebuilt only on tab change / add. The list itself
+   * updates independently (renderManageList) so live search & inline rename
+   * don't blow away the search box focus. */
+  function renderManage() {
+    var shell = $("#manage-shell"); if (!shell) return;
+    var tabs = Object.keys(MANAGE_META).map(function (k) {
+      var cnt = allValues(k).filter(Boolean).length;
+      return '<button class="seg' + (manageTab === k ? " on" : "") + '" data-act="manage-tab" data-tab="' + k + '">' +
+        ICON(MANAGE_META[k].icon) + '<span>' + esc(MANAGE_META[k].label) + '</span><b>' + cnt + '</b></button>';
+    }).join("");
+    var lbl = MANAGE_META[manageTab].label;
+
+    shell.innerHTML =
+      '<div class="seg-row">' + tabs + '</div>' +
+      '<div class="mng-add"><input type="text" id="mng-add-in" placeholder="أضِف ' + esc(lbl) + ' جديدًا…" autocomplete="off">' +
         '<button class="btn primary sm" data-act="manage-add">' + ICON("plus") + 'إضافة</button></div>' +
-      '<div class="mlist">' + rows + '</div>' +
+      '<div class="mng-search">' + ICON("search") + '<input type="text" id="mng-search" placeholder="ابحث في ' + esc(lbl) + '…" value="' + attr(manageSearch) + '" autocomplete="off"></div>' +
+      '<div class="mlist" id="manage-list"></div>' +
       (S.token ? '' : '<p class="form-hint" style="margin-top:12px">' + ICON("info") + ' تعذّر العثور على صلاحية الكتابة — التغييرات محلية فقط في هذا المتصفح.</p>');
+
+    renderManageList();
     var addIn = $("#mng-add-in"); if (addIn) addIn.addEventListener("keydown", function (e) { if (e.key === "Enter") manageAdd(); });
   }
+
+  function renderManageList() {
+    var list = $("#manage-list"); if (!list) return;
+    var q = manageSearch.trim().toLowerCase();
+    var vals = allValues(manageTab).filter(Boolean)
+      .filter(function (v) { return !q || v.toLowerCase().indexOf(q) >= 0; })
+      .sort(function (a, b) {
+        var d = usageCount(manageTab, b) - usageCount(manageTab, a);
+        return d !== 0 ? d : a.localeCompare(b, "ar");
+      });
+    if (!vals.length) {
+      list.innerHTML = '<div class="empty" style="padding:26px"><p>' + (manageSearch ? "لا نتائج مطابقة." : "لا توجد عناصر بعد.") + '</p></div>';
+      return;
+    }
+    list.innerHTML = vals.map(function (v) {
+      var used = usageCount(manageTab, v);
+      if (manageEditing === v) {
+        return '<div class="mrow editing"><input type="text" id="mng-edit-in" class="mrow-input" value="' + attr(v) + '" autocomplete="off">' +
+          '<button class="mini-btn ok" data-act="manage-edit-save" title="حفظ">' + ICON("check") + '</button>' +
+          '<button class="mini-btn" data-act="manage-edit-cancel" title="إلغاء">' + ICON("close") + '</button></div>';
+      }
+      var delBtn = used > 0
+        ? '<button class="mini-btn" disabled title="مستخدمة في ' + used + ' خدمة — أعد تعيينها أولًا">' + ICON("trash") + '</button>'
+        : '<button class="mini-btn danger" data-act="manage-delete" data-value="' + attr(v) + '" title="حذف">' + ICON("trash") + '</button>';
+      return '<div class="mrow"><div class="mtxt"><b>' + esc(v) + '</b></div>' +
+        '<span class="usage' + (used ? "" : " zero") + '">' + used + ' خدمة</span>' +
+        '<button class="mini-btn" data-act="manage-edit-start" data-value="' + attr(v) + '" title="إعادة تسمية">' + ICON("edit") + '</button>' +
+        delBtn + '</div>';
+    }).join("");
+    var editIn = $("#mng-edit-in");
+    if (editIn) {
+      editIn.focus(); editIn.select();
+      editIn.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") manageEditSave();
+        else if (e.key === "Escape") { manageEditing = null; renderManageList(); }
+      });
+    }
+  }
+
   function manageAdd() {
     var input = $("#mng-add-in"); if (!input) return;
     var v = input.value.trim(); if (!v) return;
     if (allValues(manageTab).indexOf(v) >= 0) { toast("موجود مسبقًا", "err"); return; }
     refs()[MANAGE_META[manageTab].refKey].push(v);
+    manageSearch = ""; manageEditing = null;
     commitChange("إضافة " + MANAGE_META[manageTab].label + ": " + v, renderManage, "تمت الإضافة");
   }
-  function manageRename(oldV) {
-    promptDialog({ title: "إعادة تسمية", label: MANAGE_META[manageTab].label, value: oldV, confirm: "حفظ" }).then(function (newV) {
-      if (!newV || newV === oldV) return;
-      var field = manageTab;
-      services().forEach(function (s) { if (s[field] === oldV) s[field] = newV; });
-      var rk = MANAGE_META[manageTab].refKey, list = refs()[rk];
-      var idx = list.indexOf(oldV); if (idx >= 0) list[idx] = newV;
-      if (list.indexOf(newV) !== list.lastIndexOf(newV)) refs()[rk] = uniq(list);
-      commitChange("إعادة تسمية " + MANAGE_META[manageTab].label + ": " + oldV + " → " + newV, function () { renderManage(); render(); openManage(); }, "تم التحديث");
-    });
+  function manageEditSave() {
+    var oldV = manageEditing; if (!oldV) return;
+    var input = $("#mng-edit-in"); if (!input) return;
+    var newV = input.value.trim();
+    if (!newV || newV === oldV) { manageEditing = null; renderManageList(); return; }
+    if (allValues(manageTab).indexOf(newV) >= 0 && newV !== oldV) {
+      /* merging into an existing name is fine — just reassign, then dedupe */
+    }
+    var field = manageTab;
+    services().forEach(function (s) { if (s[field] === oldV) s[field] = newV; });
+    var rk = MANAGE_META[manageTab].refKey, arr = refs()[rk];
+    var idx = arr.indexOf(oldV); if (idx >= 0) arr[idx] = newV;
+    refs()[rk] = uniq(arr);
+    manageEditing = null;
+    commitChange("إعادة تسمية " + MANAGE_META[manageTab].label + ": " + oldV + " → " + newV, function () { renderManage(); render(); }, "تم التحديث");
   }
   function manageDelete(v) {
     var used = usageCount(manageTab, v);
