@@ -574,6 +574,7 @@
       '<div class="drawer-body">' +
         '<div class="kv-grid" style="margin:14px 0">' +
           kv("building", "الإدارة العامة", s.department) +
+          kv("building2", "الإدارة", s.unit) +
           kv("clock", "الخط الزمني (SLA)", s.sla) +
           kvPerson("مالك الخدمة", s.owner) +
           kvPerson("ممثل الخدمة", s.representative) +

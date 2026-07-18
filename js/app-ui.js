@@ -144,11 +144,12 @@
     var benOptions = uniq(C.taxonomy.beneficiaries.concat(services().reduce(function (a, x) { return a.concat(x.beneficiaries || []); }, [])));
 
     var body =
-      dl("dl-sector", sectors) + dl("dl-department", allValues("department")) + dl("dl-owner", uniq(services().map(function (x) { return x.owner; }))) + dl("dl-rep", uniq(services().map(function (x) { return x.representative; }))) +
+      dl("dl-sector", sectors) + dl("dl-department", allValues("department")) + dl("dl-unit", allValues("unit")) + dl("dl-owner", uniq(services().map(function (x) { return x.owner; }))) + dl("dl-rep", uniq(services().map(function (x) { return x.representative; }))) +
       formSection("المعلومات الأساسية", "doc",
         inp("title", "عنوان الخدمة", s.title, null, true) +
         inp("sector", "القطاع", s.sector, "dl-sector", true) +
-        inp("department", "الإدارة العامة", s.department, "dl-department")
+        inp("department", "الإدارة العامة", s.department, "dl-department") +
+        inp("unit", "الإدارة", s.unit, "dl-unit")
       ) +
       formSection("الفريق المسؤول", "users",
         inp("owner", "مالك الخدمة", s.owner, "dl-owner") +
@@ -198,6 +199,20 @@
     }
     sectorInput.addEventListener("input", refreshDeptOptions);
     refreshDeptOptions();
+
+    /* Same idea one level down: "الإدارة" suggestions follow the typed
+     * الإدارة العامة, once services start recording units under it. */
+    var deptInput = $('[name="department"]', m);
+    var unitDatalist = $("#dl-unit", m);
+    var allUnitOptions = allValues("unit").filter(Boolean);
+    function refreshUnitOptions() {
+      var dv = deptInput.value.trim();
+      var scoped = dv ? uniq(services().filter(function (x) { return x.department === dv; }).map(function (x) { return x.unit; })).filter(Boolean) : [];
+      var list = scoped.length ? scoped : allUnitOptions;
+      unitDatalist.innerHTML = list.map(function (v) { return '<option value="' + attr(v) + '">'; }).join("");
+    }
+    deptInput.addEventListener("input", refreshUnitOptions);
+    refreshUnitOptions();
   }
 
   function saveServiceForm(id, m) {
@@ -210,7 +225,7 @@
 
     var rec = {
       title: title, sector: sector,
-      department: val("department"), owner: val("owner"), representative: val("representative"),
+      department: val("department"), unit: val("unit"), owner: val("owner"), representative: val("representative"),
       stage: val("stage"), category: val("category"), status: val("status"), sla: val("sla"),
       objectives: chks("objectives"), beneficiaries: chks("beneficiaries"),
       description: val("description"), goals: val("goals"), prerequisites: val("prerequisites"),
