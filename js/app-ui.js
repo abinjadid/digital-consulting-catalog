@@ -57,7 +57,8 @@
       case "filter": toggleFilter(field, value); break;
       case "unfilter": removeFilter(field, value); break;
       case "clear-filters": clearFilters(); break;
-      case "goto-filter": gotoFilter(field, value); break;
+      case "goto-filter": closeModal(); gotoFilter(field, value); break;
+      case "stat-click": statClick(t.getAttribute("data-stat")); break;
       case "add-service": openServiceForm(null); break;
       case "edit-service": closeDrawer(); openServiceForm(+id); break;
       case "delete-service": deleteService(+id); break;
@@ -101,8 +102,43 @@
     if (S.filters[field]) S.filters[field] = [value];
     S.showFilters = true; S.selected = null; closeDrawer();
     render();
-    var anchor = document.getElementById("svc-anchor");
-    if (anchor) anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+    scrollToAnchor("svc-anchor");
+  }
+  function scrollToAnchor(id) {
+    var el = document.getElementById(id);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  /* Stat tiles are entry points, not just numbers: sectors/services jump to
+   * their existing on-page section; departments/owners/representatives have
+   * no dedicated section, so they open a browsable list instead. */
+  var STAT_META = {
+    department: { label: "الإدارات العامة", icon: "building" },
+    owner: { label: "ملاك الخدمات", icon: "user" },
+    representative: { label: "ممثلو الخدمات", icon: "users" }
+  };
+  function statClick(stat) {
+    if (stat === "sectors") { scrollToAnchor("sectors-anchor"); return; }
+    if (stat === "services") { clearFilters(); scrollToAnchor("svc-anchor"); return; }
+    var m = STAT_META[stat]; if (!m) return;
+    statListModal(stat, m.label, m.icon);
+  }
+  function statListModal(field, title, icon) {
+    var values = allValues(field).filter(Boolean).sort(function (a, b) {
+      var d = usageCount(field, b) - usageCount(field, a);
+      return d !== 0 ? d : a.localeCompare(b, "ar");
+    });
+    var rows = values.map(function (v) {
+      return '<button type="button" class="mrow link" data-act="goto-filter" data-field="' + field + '" data-value="' + attr(v) + '">' +
+        '<div class="mtxt"><b>' + esc(v) + '</b></div>' +
+        '<span class="usage">' + usageCount(field, v) + ' خدمة</span>' + ICON("arrowLeft") + '</button>';
+    }).join("");
+    var m = openModal(
+      '<div class="modal-head"><div class="mi">' + ICON(icon) + '</div><h2>' + esc(title) + '</h2>' +
+      '<button class="icon-btn" id="statlist-close" style="margin-inline-start:auto">' + ICON("close") + '</button></div>' +
+      '<div class="modal-body"><div class="mlist">' + (rows || '<div class="empty" style="padding:30px"><p>لا توجد بيانات بعد.</p></div>') + '</div></div>'
+    );
+    $("#statlist-close", m).addEventListener("click", closeModal);
   }
 
   /* =====================================================================

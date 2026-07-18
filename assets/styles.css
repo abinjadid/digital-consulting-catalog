@@ -151,7 +151,7 @@ body {
 /* ---------- Page ---------- */
 main { padding-block: 26px 80px; }
 .section { margin-bottom: 34px; }
-#svc-anchor { scroll-margin-top: 84px; }
+#svc-anchor, #sectors-anchor { scroll-margin-top: 84px; }
 .section-head { display: flex; align-items: center; gap: 12px; margin-bottom: 15px; }
 .section-head .ttl { display: flex; align-items: center; gap: 10px; }
 .section-head h2 { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
@@ -181,7 +181,7 @@ main { padding-block: 26px 80px; }
 /* ---------- Stat tiles ---------- */
 .stat-grid { display:grid; grid-template-columns: repeat(auto-fit, minmax(130px,1fr)); gap: 10px; }
 .stat {
-  display:flex; align-items:center; gap:10px;
+  display:flex; align-items:center; gap:10px; width:100%; font:inherit; text-align:start;
   background: var(--surface); border:1px solid var(--border); border-radius: var(--radius);
   padding: 11px 13px; box-shadow: var(--shadow-xs); position:relative; overflow:hidden; transition:.18s;
 }
@@ -448,6 +448,9 @@ main { padding-block: 26px 80px; }
 .mrow .mtxt span { font-size:11px; color:var(--muted); }
 .mrow .usage { font-size:11px; font-weight:700; color:var(--ink-2); background:var(--surface-3); padding:3px 10px; border-radius:var(--radius-pill); white-space:nowrap; }
 .mrow .acts { display:flex; gap:6px; }
+.mrow.link { width:100%; text-align:start; cursor:pointer; transition:.14s; }
+.mrow.link:hover { border-color:var(--border-2); background:var(--surface-3); }
+.mrow.link > svg { width:14px; height:14px; flex:none; color:var(--muted); }
 .mini-btn { width:32px; height:32px; border-radius:9px; border:1px solid var(--border); background:var(--surface); display:grid; place-items:center; color:var(--ink-2); transition:.14s; }
 .mini-btn svg { width:15px; height:15px; }
 .mini-btn:hover { color:var(--ink); border-color:var(--border-2); }

@@ -316,21 +316,21 @@
         '<span class="hm">' + ICON("calendar") + 'آخر تحديث: ' + esc(fmtDate(S.catalog.updatedAt)) + '</span>' +
       '</div></div>';
 
-    /* stat tiles */
+    /* stat tiles — each is an entry point into what it's counting */
     var stats = [
-      { icon: "briefcase", c: palette()[0], val: svc.length, lbl: "إجمالي الخدمات" },
-      { icon: "layers", c: palette()[4], val: sectors.length, lbl: "القطاعات" },
-      { icon: "building", c: palette()[1], val: deps.length, lbl: "الإدارات العامة" },
-      { icon: "user", c: palette()[7], val: owners.length, lbl: "ملاك الخدمات" },
-      { icon: "users", c: palette()[2], val: reps.length, lbl: "ممثلو الخدمات" }
+      { icon: "briefcase", c: palette()[0], val: svc.length, lbl: "إجمالي الخدمات", stat: "services" },
+      { icon: "layers", c: palette()[4], val: sectors.length, lbl: "القطاعات", stat: "sectors" },
+      { icon: "building", c: palette()[1], val: deps.length, lbl: "الإدارات العامة", stat: "department" },
+      { icon: "user", c: palette()[7], val: owners.length, lbl: "ملاك الخدمات", stat: "owner" },
+      { icon: "users", c: palette()[2], val: reps.length, lbl: "ممثلو الخدمات", stat: "representative" }
     ];
     html += '<div class="section"><div class="stat-grid">' + stats.map(function (s) {
-      return '<div class="stat"><div class="si" style="background:' + hexA(s.c, .13) + ';color:' + s.c + '">' + ICON(s.icon) + '</div>' +
-        '<div class="txt"><div class="val">' + esc(s.val) + '</div><div class="lbl">' + esc(s.lbl) + '</div></div></div>';
+      return '<button class="stat" data-act="stat-click" data-stat="' + s.stat + '"><div class="si" style="background:' + hexA(s.c, .13) + ';color:' + s.c + '">' + ICON(s.icon) + '</div>' +
+        '<div class="txt"><div class="val">' + esc(s.val) + '</div><div class="lbl">' + esc(s.lbl) + '</div></div></button>';
     }).join("") + '</div></div>';
 
     /* sectors cards */
-    html += '<div class="section"><div class="section-head"><div class="ttl"><div class="si">' + ICON("layers") + '</div><h2>القطاعات والمراكز</h2></div><span class="sub">' + sectors.length + ' قطاعات</span></div>' +
+    html += '<div class="section" id="sectors-anchor"><div class="section-head"><div class="ttl"><div class="si">' + ICON("layers") + '</div><h2>القطاعات والمراكز</h2></div><span class="sub">' + sectors.length + ' قطاعات</span></div>' +
       '<div class="cards grid-3">' + sectors.slice().sort(function (a, b) { return countBy("sector", b) - countBy("sector", a); }).map(function (s) {
         var col = sectorColor(s);
         return '<button class="sector-card" style="--c:' + col + '" data-act="goto-filter" data-field="sector" data-value="' + attr(s) + '">' +
