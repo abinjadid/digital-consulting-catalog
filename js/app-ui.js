@@ -81,7 +81,6 @@
   document.addEventListener("input", function (e) {
     var el = e.target;
     if (el.id === "top-q" || el.id === "svc-q") { S.search = el.value; reRenderView(); }
-    else if (el.getAttribute && el.getAttribute("data-combo")) { S.combo[el.getAttribute("data-combo")] = el.value; reRenderView(); }
   });
 
   document.addEventListener("change", function (e) {
@@ -97,7 +96,7 @@
     reRenderView();
   }
   function removeFilter(field, value) { var arr = S.filters[field]; var i = arr.indexOf(value); if (i >= 0) arr.splice(i, 1); reRenderView(); }
-  function clearFilters() { for (var k in S.filters) S.filters[k] = []; S.combo = { department: "", owner: "", representative: "" }; reRenderView(); }
+  function clearFilters() { for (var k in S.filters) S.filters[k] = []; reRenderView(); }
   function gotoFilter(field, value) {
     for (var k in S.filters) S.filters[k] = [];
     if (S.filters[field]) S.filters[field] = [value];
@@ -121,8 +120,8 @@
       return '<div class="form-row"><label>' + esc(label) + (req ? ' <span class="req">*</span>' : '') + '</label>' +
         '<input type="text" name="' + name + '" value="' + attr(val || "") + '"' + (list ? ' list="' + list + '" autocomplete="off"' : '') + '></div>';
     }
-    function ta(name, label, val, full) {
-      return '<div class="form-row ' + (full ? "full" : "") + '"><label>' + esc(label) + '</label><textarea name="' + name + '">' + esc(val || "") + '</textarea></div>';
+    function ta(name, label, val, full, tall) {
+      return '<div class="form-row ' + (full ? "full" : "") + '"><label>' + esc(label) + '</label><textarea name="' + name + '" class="' + (tall ? "tall" : "") + '">' + esc(val || "") + '</textarea></div>';
     }
     function sel(name, label, options, cur, allowEmpty) {
       return '<div class="form-row"><label>' + esc(label) + '</label><select name="' + name + '">' +
@@ -137,29 +136,41 @@
           (on ? ICON("check") : "") + esc(o) + '</button>';
       }).join("") + '</div></div>';
     }
+    function formSection(title, icon, inner) {
+      return '<div class="filter-group"><div class="fg-head"><div class="fi">' + ICON(icon) + '</div><b>' + esc(title) + '</b></div>' +
+        '<div class="form-grid">' + inner + '</div></div>';
+    }
     var objOptions = uniq(C.taxonomy.objectives.concat(services().reduce(function (a, x) { return a.concat(x.objectives || []); }, [])));
     var benOptions = uniq(C.taxonomy.beneficiaries.concat(services().reduce(function (a, x) { return a.concat(x.beneficiaries || []); }, [])));
 
     var body =
       dl("dl-sector", sectors) + dl("dl-department", allValues("department")) + dl("dl-owner", uniq(services().map(function (x) { return x.owner; }))) + dl("dl-rep", uniq(services().map(function (x) { return x.representative; }))) +
-      '<div class="form-grid">' +
-        inp("title", "عنوان الخدمة", s.title, null, true) + '<div></div>' +
+      formSection("المعلومات الأساسية", "doc",
+        inp("title", "عنوان الخدمة", s.title, null, true) +
         inp("sector", "القطاع", s.sector, "dl-sector", true) +
-        inp("department", "الإدارة العامة", s.department, "dl-department") +
+        inp("department", "الإدارة العامة", s.department, "dl-department")
+      ) +
+      formSection("الفريق المسؤول", "users",
         inp("owner", "مالك الخدمة", s.owner, "dl-owner") +
-        inp("representative", "ممثل الخدمة", s.representative, "dl-rep") +
+        inp("representative", "ممثل الخدمة", s.representative, "dl-rep")
+      ) +
+      formSection("التصنيف", "tag",
         sel("stage", "مرحلة التحول الرقمي", C.stages.map(function (x) { return x.key; }), s.stage, true) +
         sel("category", "الفئة", cats, s.category, true) +
         sel("status", "حالة الخدمة", statuses, s.status || "قائمة", true) +
-        inp("sla", "الخط الزمني (SLA)", s.sla) +
+        inp("sla", "الخط الزمني (SLA)", s.sla)
+      ) +
+      formSection("الارتباط الاستراتيجي", "target",
         chkGroup("objectives", "الأهداف الاستراتيجية", objOptions, s.objectives) +
-        chkGroup("beneficiaries", "المستفيدون", benOptions, s.beneficiaries) +
-        ta("description", "وصف الخدمة", s.description, true) +
-        ta("goals", "الأهداف المرجوّة", s.goals, true) +
+        chkGroup("beneficiaries", "المستفيدون", benOptions, s.beneficiaries)
+      ) +
+      formSection("تفاصيل الخدمة", "briefcase",
+        ta("description", "وصف الخدمة", s.description, true, true) +
+        ta("goals", "الأهداف المرجوّة", s.goals, true, true) +
         ta("prerequisites", "المتطلبات الأولية", s.prerequisites) +
         ta("outputs", "المخرجات المتوقّعة", s.outputs) +
-        ta("stageRationale", "مبرر تصنيف المرحلة", s.stageRationale, true) +
-      '</div>';
+        ta("stageRationale", "مبرر تصنيف المرحلة", s.stageRationale, true)
+      );
 
     var m = openModal(
       '<div class="modal-head"><div class="mi">' + ICON(isEdit ? "edit" : "plus") + '</div><h2>' + (isEdit ? "تعديل خدمة" : "إضافة خدمة جديدة") + '</h2>' +
@@ -172,6 +183,21 @@
     $("#cancel-form", m).addEventListener("click", closeModal);
     $("[data-act='close-modal-x']", m).addEventListener("click", closeModal);
     $("#svc-form", m).addEventListener("submit", function (e) { e.preventDefault(); saveServiceForm(id, m); });
+
+    /* Department suggestions follow the typed sector — same fix as the
+     * browse-side filter panel: don't show all 18 departments regardless
+     * of sector, scope to the ones that actually belong to it. */
+    var sectorInput = $('[name="sector"]', m);
+    var deptDatalist = $("#dl-department", m);
+    var allDeptOptions = allValues("department").filter(Boolean);
+    function refreshDeptOptions() {
+      var sv = sectorInput.value.trim();
+      var scoped = sv ? uniq(services().filter(function (x) { return x.sector === sv; }).map(function (x) { return x.department; })).filter(Boolean) : [];
+      var list = scoped.length ? scoped : allDeptOptions;
+      deptDatalist.innerHTML = list.map(function (v) { return '<option value="' + attr(v) + '">'; }).join("");
+    }
+    sectorInput.addEventListener("input", refreshDeptOptions);
+    refreshDeptOptions();
   }
 
   function saveServiceForm(id, m) {

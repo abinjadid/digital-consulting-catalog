@@ -21,7 +21,6 @@
       sector: [], department: [], stage: [], objective: [],
       category: [], beneficiary: [], owner: [], representative: [], status: []
     },
-    combo: { department: "", owner: "", representative: "" },
     selected: null,
     dirty: false,
     sectorIndex: {}
@@ -286,11 +285,11 @@
   function reRenderView() {
     var v = $("#view"); if (!v) return render();
     var act = document.activeElement || {};
-    var fId = act.id || null, fCombo = act.getAttribute ? act.getAttribute("data-combo") : null;
+    var fId = act.id || null;
     var caret = null; try { caret = act.selectionStart; } catch (e) {}
     v.innerHTML = S.view === "dashboard" ? dashboardView() : servicesView();
     $all(".nav-tab").forEach(function (t) { t.classList.toggle("active", t.getAttribute("data-view") === S.view); });
-    var back = fId ? document.getElementById(fId) : (fCombo ? v.querySelector('[data-combo="' + fCombo + '"]') : null);
+    var back = fId ? document.getElementById(fId) : null;
     if (back) { back.focus(); if (caret != null) { try { back.setSelectionRange(caret, caret); } catch (e) {} } }
   }
 
@@ -446,16 +445,19 @@
 
   /* ---------------- Filter panel ---------------- */
   function filterPanel() {
-    var svc = services();
     var groups = "";
     groups += chipFilterGroup("sector", "layers", "القطاع", uniqueSectors(), true);
-    groups += comboFilterGroup("department", "building", "الإدارة العامة", allValues("department").filter(Boolean));
+    if (!S.filters.sector.length) {
+      groups += scopeHint();
+    } else {
+      var depts = scopedDepartments();
+      if (depts.length) groups += chipFilterGroup("department", "building", "الإدارة العامة", depts);
+      groups += teamGroup();
+    }
     groups += chipFilterGroup("stage", "flag", "مرحلة التحول", C.stages.map(function (s) { return s.key; }), true);
     groups += chipFilterGroup("objective", "target", "الهدف الاستراتيجي", C.taxonomy.objectives);
     groups += chipFilterGroup("category", "tag", "الفئة", allValues("category").filter(Boolean));
     groups += chipFilterGroup("beneficiary", "users", "المستفيدون", C.taxonomy.beneficiaries);
-    groups += comboFilterGroup("owner", "user", "مالك الخدمة", uniq(svc.map(function (s) { return s.owner; })).filter(Boolean));
-    groups += comboFilterGroup("representative", "users", "ممثل الخدمة", uniq(svc.map(function (s) { return s.representative; })).filter(Boolean));
     return '<div class="filter-panel">' + groups +
       (activeFilterCount() ? '<div style="padding-top:14px;margin-top:4px;border-top:1px solid var(--border)"><button class="btn ghost sm" data-act="clear-filters">' + ICON("refresh") + 'مسح كل الفلاتر</button></div>' : '') +
       '</div>';
@@ -473,20 +475,62 @@
     return '<div class="filter-group"><div class="fg-head"><div class="fi">' + ICON(icon) + '</div><b>' + esc(label) + '</b>' +
       (sel.length ? '<span class="picked">' + sel.length + '</span>' : '') + '</div><div class="chip-row">' + chips + '</div></div>';
   }
-  function comboFilterGroup(field, icon, label, values) {
-    var sel = S.filters[field];
-    var q = (S.combo[field] || "").toLowerCase();
-    var shown = values.filter(function (v) { return !q || v.toLowerCase().indexOf(q) >= 0; }).slice(0, 40);
-    var chips = shown.map(function (v) {
-      var on = sel.indexOf(v) >= 0;
-      var fieldForCount = field;
-      return '<button class="chip' + (on ? " on" : "") + '" data-act="filter" data-field="' + field + '" data-value="' + attr(v) + '">' +
-        esc(v) + '<span class="cnt">' + usageCount(fieldForCount, v) + '</span></button>';
+  /* Departments/team scoped to the currently selected sector(s) (and department,
+   * for the team) — never dump every org-wide name regardless of context. */
+  function scopedBySectorDept() {
+    var f = S.filters;
+    return services().filter(function (s) {
+      if (f.sector.length && f.sector.indexOf(s.sector) < 0) return false;
+      if (f.department.length && f.department.indexOf(s.department) < 0) return false;
+      return true;
+    });
+  }
+  function scopedDepartments() {
+    var f = S.filters;
+    var pool = services().filter(function (s) { return !f.sector.length || f.sector.indexOf(s.sector) >= 0; });
+    return uniq(pool.map(function (s) { return s.department; })).filter(Boolean).sort(function (a, b) { return a.localeCompare(b, "ar"); });
+  }
+  /* One row per owner, with their representative(s) nested underneath — a
+   * representative always belongs to the owner they stand in for on a given
+   * service, so they're never listed as an unrelated flat name. */
+  function scopedTeam() {
+    var byOwner = {};
+    scopedBySectorDept().forEach(function (s) {
+      if (!s.owner) return;
+      if (!byOwner[s.owner]) byOwner[s.owner] = { owner: s.owner, count: 0, reps: {} };
+      byOwner[s.owner].count++;
+      if (s.representative) byOwner[s.owner].reps[s.representative] = 1;
+    });
+    return Object.keys(byOwner).sort(function (a, b) { return a.localeCompare(b, "ar"); }).map(function (k) {
+      var o = byOwner[k];
+      return { owner: k, count: o.count, reps: Object.keys(o.reps).sort(function (a, b) { return a.localeCompare(b, "ar"); }) };
+    });
+  }
+  function scopeHint() {
+    return '<div class="filter-group"><div class="scope-hint">' + ICON("layers") +
+      '<div><b>اختر قطاعًا لعرض إداراته وفريقه المسؤول</b><span>الإدارات والأشخاص تُعرض حسب القطاع المختار بدل سردها كلها معًا</span></div></div></div>';
+  }
+  function teamGroup() {
+    var team = scopedTeam();
+    if (!team.length) return "";
+    var selOwner = S.filters.owner, selRep = S.filters.representative;
+    var rows = team.map(function (t) {
+      var on = selOwner.indexOf(t.owner) >= 0;
+      var reps = t.reps.map(function (r) {
+        var ron = selRep.indexOf(r) >= 0;
+        return '<button class="team-rep' + (ron ? " on" : "") + '" data-act="filter" data-field="representative" data-value="' + attr(r) + '">' + ICON("arrowLeft") + esc(r) + '</button>';
+      }).join("");
+      return '<div class="team-row">' +
+        '<button class="team-owner' + (on ? " on" : "") + '" data-act="filter" data-field="owner" data-value="' + attr(t.owner) + '">' +
+          '<span class="avatar" style="background:' + avatarColor(t.owner) + '">' + esc(initials(t.owner)) + '</span>' +
+          '<span class="to-name">' + esc(t.owner) + '</span><span class="to-cnt">' + t.count + '</span></button>' +
+        (reps ? '<div class="team-reps">' + reps + '</div>' : "") +
+      '</div>';
     }).join("");
-    return '<div class="filter-group"><div class="fg-head"><div class="fi">' + ICON(icon) + '</div><b>' + esc(label) + '</b>' +
-      (sel.length ? '<span class="picked">' + sel.length + '</span>' : '') + '</div>' +
-      '<div class="combo"><input type="text" placeholder="ابحث في ' + esc(label) + '…" value="' + attr(S.combo[field] || "") + '" data-combo="' + field + '"></div>' +
-      '<div class="combo-list">' + (chips || '<span class="muted" style="font-size:12px">لا نتائج</span>') + '</div></div>';
+    var pickedCount = selOwner.length + selRep.length;
+    return '<div class="filter-group"><div class="fg-head"><div class="fi">' + ICON("users") + '</div><b>الفريق المسؤول</b>' +
+      (pickedCount ? '<span class="picked">' + pickedCount + '</span>' : '') + '</div>' +
+      '<div class="team-list">' + rows + '</div></div>';
   }
   function activeFilterBar() {
     if (!activeFilterCount() && !S.search) return "";
