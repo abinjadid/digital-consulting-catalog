@@ -77,7 +77,25 @@
     return JSON.parse(dec.decode(plain));
   }
 
-  var api = { encryptJSON: encryptJSON, decryptEnvelope: decryptEnvelope, bytesToB64: bytesToB64, b64ToBytes: b64ToBytes };
+  /* ---- Password hashing for personal user-account logins (not encryption —
+   * a salted one-way digest to check "did they type the right password"
+   * against a value already sitting inside the encrypted catalog). ---- */
+  var PW_ITER = 100000;
+  async function hashPassword(password, saltB64) {
+    var salt = saltB64 ? b64ToBytes(saltB64) : getRandom(new Uint8Array(16));
+    var baseKey = await subtle.importKey("raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveBits"]);
+    var bits = await subtle.deriveBits({ name: "PBKDF2", salt: salt, iterations: PW_ITER, hash: HASH }, baseKey, 256);
+    return { salt: bytesToB64(salt), hash: bytesToB64(new Uint8Array(bits)) };
+  }
+  async function verifyPassword(password, saltB64, hashB64) {
+    var r = await hashPassword(password, saltB64);
+    return r.hash === hashB64;
+  }
+
+  var api = {
+    encryptJSON: encryptJSON, decryptEnvelope: decryptEnvelope, bytesToB64: bytesToB64, b64ToBytes: b64ToBytes,
+    hashPassword: hashPassword, verifyPassword: verifyPassword
+  };
   root.CryptoBox = api;
   if (typeof module !== "undefined" && module.exports) module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

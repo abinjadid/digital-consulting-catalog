@@ -9,11 +9,15 @@
   var openModal = I.openModal, closeModal = I.closeModal, confirmDialog = I.confirmDialog, closeDrawer = I.closeDrawer;
   var persist = I.persist, fetchEnvelope = I.fetchEnvelope, refreshSha = I.refreshSha;
   var services = I.services, refs = I.refs, allValues = I.allValues, usageCount = I.usageCount, uniqueSectors = I.uniqueSectors;
+  var allServices = I.allServices, users = I.users, pendingEdits = I.pendingEdits, isAdmin = I.isAdmin;
 
   var envelope = null;
   var manageTab = "department";
   var manageSearch = "";
   var manageEditing = null;
+  var authView = "login"; /* "login" | "register" | "pending-notice" — bootstrap is auto-detected */
+  var authNotice = "";
+  var reviewTab = "edits"; /* admin review modal: "edits" | "users" */
 
   /* ---------------- Theme ---------------- */
   function applyTheme(t) {
@@ -55,6 +59,17 @@
       case "manage-edit-save": manageEditSave(); break;
       case "manage-edit-cancel": manageEditing = null; renderManageList(); break;
       case "manage-delete": manageDelete(t.getAttribute("data-value")); break;
+      case "review": openReview(); break;
+      case "review-tab": reviewTab = t.getAttribute("data-tab"); renderReviewList(); break;
+      case "review-approve": reviewApprove(+value); break;
+      case "review-reject": reviewReject(+value); break;
+      case "rv-toggle": t.nextElementSibling.classList.toggle("hidden"); break;
+      case "user-approve": userApprove(+value); break;
+      case "user-reject": userReject(+value); break;
+      case "user-deactivate": userDeactivate(+value); break;
+      case "user-reactivate": userReactivate(+value); break;
+      case "user-assign": openAssign(+value); break;
+      case "assign-toggle": toggleAssign(+t.getAttribute("data-svc"), +t.getAttribute("data-user"), t.getAttribute("data-field")); break;
       case "settings-theme": applyTheme(t.getAttribute("data-theme")); render(); openSettings(); break;
       case "change-pw": changePassword(); break;
       case "export": exportData(); break;
@@ -72,8 +87,11 @@
   });
 
   document.addEventListener("change", function (e) {
-    if (e.target.id === "svc-sort") { S.sort = e.target.value; reRenderView(); }
-    if (e.target.id === "import-file") handleImportFile(e.target.files[0]);
+    var el = e.target;
+    if (el.id === "svc-sort") { S.sort = el.value; reRenderView(); }
+    else if (el.id === "import-file") handleImportFile(el.files[0]);
+    else if (el.getAttribute && el.getAttribute("data-act") === "user-role") userSetRole(+el.getAttribute("data-value"), el.value);
+    else if (el.getAttribute && el.getAttribute("data-act") === "user-sector") userSetSector(+el.getAttribute("data-value"), el.value);
   });
 
   /* ---------------- Filters ---------------- */
@@ -257,26 +275,57 @@
       outputs: val("outputs"), stageRationale: val("stageRationale"),
       updatedAt: I.todayISO()
     };
+    /* an owner/representative can only ever submit for their own sector —
+     * override whatever the free-text sector field says, don't trust it */
+    if (!isAdmin() && S.currentUser) rec.sector = S.currentUser.sector;
 
     var list = S.catalog.services;
-    if (id) {
-      for (var i = 0; i < list.length; i++) if (list[i].id === id) { rec.id = id; list[i] = Object.assign({}, list[i], rec); break; }
+    if (isAdmin()) {
+      if (id) {
+        for (var i = 0; i < list.length; i++) if (list[i].id === id) { rec.id = id; list[i] = Object.assign({}, list[i], rec); break; }
+      } else {
+        rec.id = list.reduce(function (mx, x) { return Math.max(mx, x.id || 0); }, 0) + 1;
+        list.unshift(rec);
+      }
+      closeModal();
+      commitChange(id ? "تعديل خدمة: " + title : "إضافة خدمة: " + title, render, id ? "تم حفظ التعديلات" : "تمت إضافة الخدمة");
     } else {
-      rec.id = list.reduce(function (mx, x) { return Math.max(mx, x.id || 0); }, 0) + 1;
-      list.unshift(rec);
+      var before = id ? list.filter(function (x) { return x.id === id; })[0] : null;
+      submitPendingEdit(id ? "edit" : "add", id || null, before || null, rec, title);
+      closeModal();
     }
-    closeModal();
-    commitChange(id ? "تعديل خدمة: " + title : "إضافة خدمة: " + title, render, id ? "تم حفظ التعديلات" : "تمت إضافة الخدمة");
   }
 
   function deleteService(id) {
     var s = services().filter(function (x) { return x.id === id; })[0]; if (!s) return;
     confirmDialog({ title: "حذف الخدمة", message: 'سيتم حذف الخدمة: «' + s.title + '». لا يمكن التراجع.', confirm: "حذف", danger: true }).then(function (ok) {
       if (!ok) return;
-      S.catalog.services = S.catalog.services.filter(function (x) { return x.id !== id; });
-      closeDrawer();
-      commitChange("حذف خدمة: " + s.title, render, "تم حذف الخدمة");
+      if (isAdmin()) {
+        S.catalog.services = S.catalog.services.filter(function (x) { return x.id !== id; });
+        closeDrawer();
+        commitChange("حذف خدمة: " + s.title, render, "تم حذف الخدمة");
+      } else {
+        submitPendingEdit("delete", id, s, null, s.title);
+        closeDrawer();
+      }
     });
+  }
+
+  /* Owner/representative changes never apply directly — they're queued for
+   * مدير النظام to approve, per the (deliberately UI-enforced, not
+   * cryptographically enforced) role model this catalog uses. */
+  function submitPendingEdit(action, serviceId, before, after, titleForMsg) {
+    var u = S.currentUser;
+    var rec = {
+      id: pendingEdits().reduce(function (m, x) { return Math.max(m, x.id || 0); }, 0) + 1,
+      action: action, serviceId: serviceId, before: before, after: after,
+      titleSnapshot: titleForMsg, sector: u.sector,
+      submittedBy: u.id, submittedByName: u.name,
+      submittedAt: I.todayISO(), status: "pending", reviewNote: null, reviewedBy: null, reviewedAt: null
+    };
+    pendingEdits().push(rec);
+    var verb = action === "add" ? "إضافة" : action === "delete" ? "حذف" : "تعديل";
+    commitChange(verb + " خدمة (بانتظار الموافقة): " + titleForMsg, render, "تم إرسال طلبك لمدير النظام للموافقة");
   }
 
   /* Persist wrapper. onRender refreshes UI (runs in every branch — local state
@@ -308,6 +357,220 @@
     });
     $("[data-rel]", m).addEventListener("click", function () { closeModal(); reloadData(); });
     $("[data-cancel]", m).addEventListener("click", closeModal);
+  }
+
+  /* =====================================================================
+   * REVIEW — مدير النظام approves/rejects submitted edits and new accounts.
+   * Nothing an owner/representative submits ever touches the live catalog
+   * until it passes through here.
+   * ===================================================================== */
+  var FIELD_LABELS = {
+    title: "عنوان الخدمة", sector: "القطاع", department: "الإدارة العامة", unit: "الإدارة",
+    owner: "مالك الخدمة", representative: "ممثل الخدمة", stage: "المرحلة", category: "الفئة",
+    status: "الحالة", sla: "SLA", description: "الوصف", goals: "الأهداف المرجوّة",
+    prerequisites: "المتطلبات", outputs: "المخرجات", stageRationale: "مبرر المرحلة",
+    objectives: "الأهداف الاستراتيجية", beneficiaries: "المستفيدون"
+  };
+  function fieldStr(v) { return Array.isArray(v) ? v.join("، ") : (v == null ? "" : String(v)); }
+  function diffRows(before, after) {
+    var keys = Object.keys(FIELD_LABELS);
+    var rows = [];
+    keys.forEach(function (k) {
+      var b = before ? fieldStr(before[k]) : "";
+      var a = after ? fieldStr(after[k]) : "";
+      if (before && after && b === a) return; /* edit: only show changed fields */
+      if (!a && !b) return;
+      rows.push({ label: FIELD_LABELS[k], before: b, after: a });
+    });
+    return rows;
+  }
+
+  function openReview() {
+    reviewTab = "edits";
+    var m = openModal(
+      '<div class="modal-head"><div class="mi">' + ICON("list") + '</div><h2>طلبات المراجعة</h2>' +
+      '<button class="icon-btn" id="rev-close" style="margin-inline-start:auto">' + ICON("close") + '</button></div>' +
+      '<div class="modal-body manage-body"><div id="review-shell"></div></div>');
+    $("#rev-close", m).addEventListener("click", closeModal);
+    renderReview();
+  }
+  function renderReview() {
+    var shell = $("#review-shell"); if (!shell) return;
+    var editCount = pendingEdits().filter(function (p) { return p.status === "pending"; }).length;
+    var userCount = users().filter(function (u) { return u.status === "pending"; }).length;
+    shell.innerHTML =
+      '<div class="seg-row">' +
+        '<button class="seg' + (reviewTab === "edits" ? " on" : "") + '" data-act="review-tab" data-tab="edits">' + ICON("edit") + '<span>طلبات التعديل</span><b>' + editCount + '</b></button>' +
+        '<button class="seg' + (reviewTab === "users" ? " on" : "") + '" data-act="review-tab" data-tab="users">' + ICON("users") + '<span>طلبات الحسابات</span><b>' + userCount + '</b></button>' +
+      '</div><div id="review-list"></div>';
+    renderReviewList();
+  }
+  function reviewEmpty(msg) { return '<div class="empty" style="padding:30px"><p>' + esc(msg) + '</p></div>'; }
+  function statusBadge(status) {
+    var map = { pending: ["قيد المراجعة", "warn"], approved: ["مقبول", "ok"], rejected: ["مرفوض", "err"] };
+    var v = map[status] || [status, ""];
+    return '<span class="rv-status ' + v[1] + '">' + v[0] + '</span>';
+  }
+  function renderReviewList() {
+    var list = $("#review-list"); if (!list) return;
+    if (reviewTab === "edits") {
+      var items = pendingEdits().slice().sort(function (a, b) { return b.id - a.id; });
+      list.innerHTML = items.length ? items.map(editRowHTML).join("") : reviewEmpty("لا توجد طلبات تعديل بعد.");
+    } else {
+      var us = users().slice().sort(function (a, b) {
+        var order = { pending: 0, approved: 1, rejected: 2 };
+        return (order[a.status] - order[b.status]) || b.id - a.id;
+      });
+      list.innerHTML = us.length ? us.map(userRowHTML).join("") : reviewEmpty("لا يوجد مستخدمون بعد.");
+    }
+  }
+  var actionLabel = { add: "إضافة", edit: "تعديل", delete: "حذف" };
+  function editRowHTML(e) {
+    var rows = e.action === "delete" ? diffRows(e.before, null) : diffRows(e.action === "edit" ? e.before : null, e.after);
+    var detail = rows.map(function (r) {
+      return '<div class="diff-row"><b>' + esc(r.label) + '</b>' +
+        (e.action !== "add" ? '<span class="diff-before">' + esc(r.before || "—") + '</span>' : "") +
+        (e.action !== "delete" ? '<span class="diff-after">' + esc(r.after || "—") + '</span>' : "") +
+        '</div>';
+    }).join("");
+    return '<div class="rv-card">' +
+      '<div class="rv-head"><span class="badge plain">' + esc(actionLabel[e.action]) + '</span>' +
+      '<b class="rv-title">' + esc(e.titleSnapshot) + '</b>' + statusBadge(e.status) + '</div>' +
+      '<div class="rv-meta">' + ICON("user") + esc(e.submittedByName) + ' · ' + ICON("layers") + esc(e.sector) + ' · ' + esc(I.fmtDate(e.submittedAt)) + '</div>' +
+      (detail ? '<button type="button" class="rv-toggle" data-act="rv-toggle">' + ICON("chevronDown") + 'عرض التفاصيل</button><div class="rv-detail hidden">' + detail + '</div>' : "") +
+      (e.status === "pending" ? '<div class="rv-acts"><button class="btn primary sm" data-act="review-approve" data-value="' + e.id + '">' + ICON("check") + 'قبول وتطبيق</button>' +
+        '<button class="btn danger sm" data-act="review-reject" data-value="' + e.id + '">' + ICON("close") + 'رفض</button></div>' :
+        '<div class="rv-meta">' + ICON("check") + 'راجعه ' + esc(e.reviewedBy || "") + ' · ' + esc(I.fmtDate(e.reviewedAt)) + '</div>') +
+      '</div>';
+  }
+  function reviewApprove(editId) {
+    var e = pendingEdits().filter(function (x) { return x.id === editId; })[0]; if (!e || e.status !== "pending") return;
+    var list = S.catalog.services;
+    if (e.action === "add") {
+      var rec = Object.assign({}, e.after);
+      rec.id = list.reduce(function (m, x) { return Math.max(m, x.id || 0); }, 0) + 1;
+      list.unshift(rec);
+    } else if (e.action === "edit") {
+      for (var i = 0; i < list.length; i++) if (list[i].id === e.serviceId) { list[i] = Object.assign({}, list[i], e.after); break; }
+    } else if (e.action === "delete") {
+      S.catalog.services = list.filter(function (x) { return x.id !== e.serviceId; });
+    }
+    e.status = "approved"; e.reviewedBy = S.currentUser.name; e.reviewedAt = I.todayISO();
+    commitChange("قبول طلب: " + e.titleSnapshot, function () { renderReviewList(); render(); }, "تم القبول والتطبيق");
+  }
+  function reviewReject(editId) {
+    var e = pendingEdits().filter(function (x) { return x.id === editId; })[0]; if (!e || e.status !== "pending") return;
+    e.status = "rejected"; e.reviewedBy = S.currentUser.name; e.reviewedAt = I.todayISO();
+    commitChange("رفض طلب: " + e.titleSnapshot, renderReviewList, "تم الرفض");
+  }
+
+  /* ---- Accounts tab: approve/reject signups, adjust role/sector, revoke ---- */
+  var ROLE_LABEL = { admin: "مدير النظام", owner_rep: "مالك/ممثل خدمات" };
+  function userRowHTML(u) {
+    var roleSel = '<select class="mini-select" data-act="user-role" data-value="' + u.id + '">' +
+      '<option value="owner_rep"' + (u.role === "owner_rep" ? " selected" : "") + '>مالك/ممثل خدمات</option>' +
+      '<option value="admin"' + (u.role === "admin" ? " selected" : "") + '>مدير النظام</option>' +
+      '</select>';
+    var sectorSel = u.role === "admin" ? "" : '<select class="mini-select" data-act="user-sector" data-value="' + u.id + '">' +
+      '<option value="">اختر القطاع…</option>' +
+      uniqueSectors().map(function (s) { return '<option value="' + attr(s) + '"' + (u.sector === s ? " selected" : "") + '>' + esc(s) + '</option>'; }).join("") +
+      '</select>';
+    var actions;
+    if (u.status === "pending") {
+      actions = '<button class="btn primary sm" data-act="user-approve" data-value="' + u.id + '">' + ICON("check") + 'قبول</button>' +
+        '<button class="btn danger sm" data-act="user-reject" data-value="' + u.id + '">' + ICON("close") + 'رفض</button>';
+    } else if (u.status === "approved") {
+      actions = (u.role === "owner_rep" && u.sector ? '<button class="btn sm" data-act="user-assign" data-value="' + u.id + '">' + ICON("briefcase") + 'تعيين لخدمات</button>' : "") +
+        '<button class="btn danger sm" data-act="user-deactivate" data-value="' + u.id + '">' + ICON("lock") + 'تعطيل</button>';
+    } else {
+      actions = '<button class="btn primary sm" data-act="user-reactivate" data-value="' + u.id + '">' + ICON("check") + 'إعادة تفعيل</button>';
+    }
+    return '<div class="rv-card">' +
+      '<div class="rv-head"><span class="avatar" style="width:28px;height:28px;font-size:10px;flex:none;background:' + I.avatarColor(u.name) + '">' + esc(I.initials(u.name)) + '</span>' +
+      '<b class="rv-title">' + esc(u.name) + '</b><span class="muted" style="font-size:11px;white-space:nowrap">@' + esc(u.username) + '</span>' + statusBadge(u.status) + '</div>' +
+      '<div class="rv-acts" style="margin-top:10px">' + roleSel + sectorSel + '</div>' +
+      '<div class="rv-acts">' + actions + '</div>' +
+      '</div>';
+  }
+  function userApprove(uid) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
+    if (u.role === "owner_rep" && !u.sector) { toast("حدّد القطاع أولًا", "err"); return; }
+    u.status = "approved";
+    commitChange("قبول حساب: " + u.name, renderReviewList, "تم القبول");
+  }
+  function userReject(uid) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
+    confirmDialog({ title: "رفض الحساب", message: 'رفض حساب «' + u.name + '»؟', confirm: "رفض", danger: true }).then(function (ok) {
+      if (!ok) return;
+      u.status = "rejected";
+      commitChange("رفض حساب: " + u.name, renderReviewList, "تم الرفض");
+    });
+  }
+  function userDeactivate(uid) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
+    if (u.role === "admin") {
+      var otherActiveAdmins = users().filter(function (x) { return x.role === "admin" && x.status === "approved" && x.id !== uid; }).length;
+      if (otherActiveAdmins === 0) { toast("لا يمكن التعطيل", "err", "هذا آخر حساب مدير نظام نشط — رقِّ حسابًا آخر لمدير أولًا"); return; }
+    }
+    confirmDialog({ title: "تعطيل الحساب", message: 'تعطيل حساب «' + u.name + '»؟ لن يستطيع تسجيل الدخول بعد الآن.', confirm: "تعطيل", danger: true }).then(function (ok) {
+      if (!ok) return;
+      u.status = "rejected";
+      commitChange("تعطيل حساب: " + u.name, renderReviewList, "تم التعطيل");
+    });
+  }
+  function userReactivate(uid) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
+    u.status = "approved";
+    commitChange("إعادة تفعيل حساب: " + u.name, renderReviewList, "تمت إعادة التفعيل");
+  }
+  function userSetRole(uid, role) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
+    if (u.role === "admin" && role !== "admin") {
+      var otherActiveAdmins = users().filter(function (x) { return x.role === "admin" && x.status === "approved" && x.id !== uid; }).length;
+      if (otherActiveAdmins === 0) { toast("لا يمكن التغيير", "err", "هذا آخر حساب مدير نظام نشط"); renderReviewList(); return; }
+    }
+    u.role = role; if (role === "admin") u.sector = null;
+    commitChange("تغيير دور مستخدم: " + u.name, renderReviewList, "تم التحديث");
+  }
+  function userSetSector(uid, sector) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
+    u.sector = sector || null;
+    commitChange("تغيير قطاع مستخدم: " + u.name, renderReviewList, "تم التحديث");
+  }
+
+  /* ---- Link an approved user to specific services as owner/representative
+   * (writes straight into the service record's owner/representative field —
+   * an admin action, applied immediately, no approval queue involved). ---- */
+  function assignRowsHTML(uid) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return "";
+    var svcs = allServices().filter(function (s) { return s.sector === u.sector; });
+    if (!svcs.length) return reviewEmpty("لا توجد خدمات في هذا القطاع بعد.");
+    return svcs.map(function (s) {
+      var isOwner = s.owner === u.name, isRep = s.representative === u.name;
+      return '<div class="mrow"><div class="mtxt"><b>' + esc(s.title) + '</b></div>' +
+        '<button class="chk' + (isOwner ? " on" : "") + '" data-act="assign-toggle" data-field="owner" data-svc="' + s.id + '" data-user="' + uid + '">' + (isOwner ? ICON("check") : "") + 'مالك</button>' +
+        '<button class="chk' + (isRep ? " on" : "") + '" data-act="assign-toggle" data-field="representative" data-svc="' + s.id + '" data-user="' + uid + '">' + (isRep ? ICON("check") : "") + 'ممثل</button>' +
+        '</div>';
+    }).join("");
+  }
+  function openAssign(uid) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
+    var m = openModal(
+      '<div class="modal-head"><div class="mi">' + ICON("briefcase") + '</div><h2>تعيين ' + esc(u.name) + ' لخدمات ' + esc(u.sector) + '</h2>' +
+      '<button class="icon-btn" id="assign-close" style="margin-inline-start:auto">' + ICON("close") + '</button></div>' +
+      '<div class="modal-body"><div class="mlist" id="assign-list">' + assignRowsHTML(uid) + '</div></div>');
+    $("#assign-close", m).addEventListener("click", closeModal);
+  }
+  function toggleAssign(svcId, uid, field) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
+    var s = allServices().filter(function (x) { return x.id === svcId; })[0]; if (!s) return;
+    var wasSet = s[field] === u.name;
+    s[field] = wasSet ? "" : u.name;
+    var verb = wasSet ? "إزالة" : "تعيين", role = field === "owner" ? "كمالك" : "كممثل";
+    commitChange(verb + " " + u.name + " " + role + " لخدمة: " + s.title, function () {
+      var list = $("#assign-list"); if (list) list.innerHTML = assignRowsHTML(uid);
+      render();
+    }, "تم التحديث");
   }
 
   /* =====================================================================
@@ -430,10 +693,18 @@
    * ===================================================================== */
   function openSettings() {
     var tokenSet = !!S.token;
+    var u = S.currentUser;
     var m = openModal(
       '<div class="modal-head"><div class="mi">' + ICON("gear") + '</div><h2>الإعدادات</h2>' +
       '<button class="icon-btn" id="set-close" style="margin-inline-start:auto">' + ICON("close") + '</button></div>' +
       '<div class="modal-body">' +
+
+      (u ? section("الحساب", "user",
+        '<div style="display:flex;align-items:center;gap:12px">' +
+          '<span class="avatar" style="width:44px;height:44px;font-size:15px;background:' + I.avatarColor(u.name) + '">' + esc(I.initials(u.name)) + '</span>' +
+          '<div><b style="font-size:14px;font-weight:700;display:block">' + esc(u.name) + '</b>' +
+          '<span class="muted" style="font-size:12px">@' + esc(u.username) + ' · ' + (u.role === "admin" ? "مدير النظام" : "مالك/ممثل خدمات — " + esc(u.sector || "")) + '</span></div>' +
+        '</div>') : '') +
 
       section("المظهر", "moon",
         '<div style="display:flex;gap:10px">' +
@@ -441,7 +712,7 @@
           '<button class="btn ' + (I.isDark() ? "primary" : "") + '" data-act="settings-theme" data-theme="dark">' + ICON("moon") + 'داكن</button>' +
         '</div>') +
 
-      (tokenSet ? section("كلمة مرور الكتالوج", "lock",
+      (tokenSet && isAdmin() ? section("كلمة مرور الكتالوج", "lock",
         '<p class="form-hint" style="margin-bottom:10px">تغيير كلمة المرور يُعيد تشفير البيانات بالكامل ويحفظها في المستودع. أبلغ الفريق بالكلمة الجديدة.</p>' +
         '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
           '<input type="password" id="pw-new" placeholder="كلمة مرور جديدة" style="flex:1;min-width:150px;height:42px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13px">' +
@@ -451,7 +722,7 @@
       section("النسخ الاحتياطي والمزامنة", "download",
         '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
           '<button class="btn" data-act="export">' + ICON("download") + 'تصدير نسخة (JSON)</button>' +
-          '<button class="btn" data-act="import">' + ICON("upload") + 'استيراد نسخة</button>' +
+          (isAdmin() ? '<button class="btn" data-act="import">' + ICON("upload") + 'استيراد نسخة</button>' : '') +
           '<button class="btn" data-act="reload-data">' + ICON("refresh") + 'تحديث من المستودع</button>' +
           '<input type="file" id="import-file" accept="application/json,.json" style="display:none">' +
         '</div>') +
@@ -518,8 +789,11 @@
   }
   function lockApp() {
     sessionStorage.removeItem("cat_pw"); localStorage.removeItem("cat_pw");
-    S.password = null; S.catalog = null; S.token = null; S.sha = null;
+    sessionStorage.removeItem("cat_user"); localStorage.removeItem("cat_user");
+    S.password = null; S.catalog = null; S.token = null; S.sha = null; S.currentUser = null;
+    authView = "login";
     closeModal(); closeDrawer();
+    var g = $("#authgate"); if (g) g.remove();
     showLock();
   }
 
@@ -541,6 +815,8 @@
     cat.refs.representatives = cat.refs.representatives || [];
     cat.taxonomy = cat.taxonomy || C.taxonomy;
     cat.updatedAt = cat.updatedAt || I.todayISO();
+    cat.users = cat.users || [];
+    cat.pendingEdits = cat.pendingEdits || [];
     /* Write access is embedded in the encrypted data itself (never in plain JS),
      * so anyone who knows the catalog password can edit automatically — no
      * separate token entry. Carry it forward across saves/imports so a backup
@@ -587,6 +863,174 @@
   }
   function hideLock() { var l = $("#lock"); if (l) { l.style.transition = ".3s"; l.style.opacity = "0"; setTimeout(function () { l.remove(); }, 300); } }
 
+  /* =====================================================================
+   * AUTH GATE — personal account layer (bootstrap / login / register)
+   * Sits between "catalog decrypted" and "app rendered". Lightweight,
+   * UI-enforced roles: مدير النظام (admin, sees/edits everything, approves
+   * accounts + edits) و مالك/ممثل خدمات (scoped to their own sector, every
+   * change goes to a pending queue for the admin to approve).
+   * ===================================================================== */
+  function isBootstrap() { return users().length === 0; }
+
+  function showAuthGate() {
+    if ($("#authgate")) { renderAuthGate(); return; }
+    var g = document.createElement("div"); g.className = "lock-screen"; g.id = "authgate";
+    document.body.appendChild(g);
+    renderAuthGate();
+  }
+  function hideAuthGate() { var g = $("#authgate"); if (g) { g.style.transition = ".3s"; g.style.opacity = "0"; setTimeout(function () { g.remove(); }, 300); } }
+
+  function renderAuthGate() {
+    var g = $("#authgate"); if (!g) return;
+    if (isBootstrap()) { g.innerHTML = bootstrapMarkup(); bindBootstrap(); return; }
+    if (authView === "register") { g.innerHTML = registerMarkup(); bindRegister(); return; }
+    if (authView === "pending-notice") { g.innerHTML = noticeMarkup(); bindNotice(); return; }
+    g.innerHTML = loginMarkup(); bindLogin();
+  }
+
+  function authShell(icon, title, sub, body, footLink) {
+    return '<div class="lock-card">' +
+      '<div class="lock-logo">' + ICON(icon) + '</div>' +
+      '<h1>' + esc(title) + '</h1>' +
+      '<div class="p">' + esc(sub) + '</div>' +
+      body +
+      (footLink || "") +
+      '</div>';
+  }
+
+  function bootstrapMarkup() {
+    return authShell("sparkles", "إنشاء حساب مدير النظام", "لا يوجد بعد أي مستخدم — أنشئ أول حساب، وسيكون مدير النظام بصلاحية كاملة.",
+      '<form id="auth-form">' +
+        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("user") + '</span>' +
+          '<input type="text" id="af-name" class="plain" placeholder="الاسم الكامل" autocomplete="name"></div>' +
+        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("key") + '</span>' +
+          '<input type="text" id="af-username" class="plain" placeholder="اسم المستخدم" autocomplete="username"></div>' +
+        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("lock") + '</span>' +
+          '<input type="password" id="af-pw" placeholder="كلمة المرور" autocomplete="new-password"></div>' +
+        '<div class="lock-field"><span class="li">' + ICON("lock") + '</span>' +
+          '<input type="password" id="af-pw2" placeholder="تأكيد كلمة المرور" autocomplete="new-password"></div>' +
+        '<div class="lock-err" id="auth-err"></div>' +
+        '<button type="submit" class="btn primary block" id="auth-btn">' + ICON("check") + 'إنشاء الحساب والدخول</button>' +
+      '</form>');
+  }
+
+  function loginMarkup() {
+    return authShell("lock", "تسجيل الدخول", "أدخل حسابك الشخصي للمتابعة إلى " + C.brand.title,
+      '<form id="auth-form">' +
+        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("user") + '</span>' +
+          '<input type="text" id="af-username" class="plain" placeholder="اسم المستخدم" autocomplete="username" autofocus></div>' +
+        '<div class="lock-field"><span class="li">' + ICON("key") + '</span>' +
+          '<input type="password" id="af-pw" placeholder="كلمة المرور" autocomplete="current-password"></div>' +
+        '<label class="lock-remember"><input type="checkbox" id="af-remember"> تذكّرني على هذا الجهاز</label>' +
+        '<div class="lock-err" id="auth-err"></div>' +
+        '<button type="submit" class="btn primary block" id="auth-btn">' + ICON("unlock") + 'دخول</button>' +
+      '</form>',
+      '<div class="lock-foot">ليس لديك حساب؟ <a href="#" id="auth-to-register" style="color:var(--accent);font-weight:700">سجّل الآن</a></div>');
+  }
+
+  function registerMarkup() {
+    var sectors = uniqueSectors();
+    return authShell("users", "طلب إنشاء حساب", "سجّل بيانات مالك/ممثل الخدمة — يحتاج طلبك موافقة مدير النظام قبل الدخول.",
+      '<form id="auth-form">' +
+        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("user") + '</span>' +
+          '<input type="text" id="af-name" class="plain" placeholder="الاسم الكامل" autocomplete="name"></div>' +
+        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("key") + '</span>' +
+          '<input type="text" id="af-username" class="plain" placeholder="اسم المستخدم" autocomplete="username"></div>' +
+        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("layers") + '</span>' +
+          '<select id="af-sector">' +
+            '<option value="">اختر القطاع…</option>' +
+            sectors.map(function (s) { return '<option value="' + attr(s) + '">' + esc(s) + '</option>'; }).join("") +
+          '</select></div>' +
+        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("lock") + '</span>' +
+          '<input type="password" id="af-pw" placeholder="كلمة المرور" autocomplete="new-password"></div>' +
+        '<div class="lock-field"><span class="li">' + ICON("lock") + '</span>' +
+          '<input type="password" id="af-pw2" placeholder="تأكيد كلمة المرور" autocomplete="new-password"></div>' +
+        '<div class="lock-err" id="auth-err"></div>' +
+        '<button type="submit" class="btn primary block" id="auth-btn">' + ICON("check") + 'إرسال الطلب</button>' +
+      '</form>',
+      '<div class="lock-foot">لديك حساب بالفعل؟ <a href="#" id="auth-to-login" style="color:var(--accent);font-weight:700">تسجيل الدخول</a></div>');
+  }
+
+  function noticeMarkup() {
+    return authShell("info", "بانتظار الموافقة", authNotice || "تم إرسال طلبك بنجاح — بانتظار موافقة مدير النظام.",
+      '<button type="button" class="btn ghost block" id="auth-back">' + ICON("arrowRight") + 'رجوع لتسجيل الدخول</button>');
+  }
+
+  function bindBootstrap() {
+    $("#auth-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var name = $("#af-name").value.trim(), username = $("#af-username").value.trim();
+      var pw = $("#af-pw").value, pw2 = $("#af-pw2").value;
+      var err = $("#auth-err");
+      if (!name || !username) { err.textContent = "الاسم واسم المستخدم مطلوبان"; return; }
+      if (pw.length < 6) { err.textContent = "كلمة المرور 6 أحرف على الأقل"; return; }
+      if (pw !== pw2) { err.textContent = "كلمتا المرور غير متطابقتين"; return; }
+      var btn = $("#auth-btn"); btn.disabled = true;
+      Box.hashPassword(pw).then(function (h) {
+        var u = { id: 1, name: name, username: username, usernameLower: username.toLowerCase(), salt: h.salt, hash: h.hash, role: "admin", sector: null, status: "approved", createdAt: I.todayISO() };
+        users().push(u);
+        S.currentUser = { id: u.id, name: u.name, username: u.username, role: u.role, sector: u.sector };
+        localStorage.setItem("cat_user", String(u.id));
+        commitChange("إنشاء حساب مدير النظام: " + name, function () { hideAuthGate(); render(); }, "تم إنشاء حساب المدير");
+      }).catch(function () { btn.disabled = false; err.textContent = "تعذّر إنشاء الحساب"; });
+    });
+  }
+
+  function bindLogin() {
+    $("#auth-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var username = $("#af-username").value.trim(), pw = $("#af-pw").value;
+      var remember = $("#af-remember").checked;
+      var err = $("#auth-err");
+      if (!username || !pw) { err.textContent = "أدخل اسم المستخدم وكلمة المرور"; return; }
+      var u = users().filter(function (x) { return (x.usernameLower || x.username.toLowerCase()) === username.toLowerCase(); })[0];
+      if (!u) { err.textContent = "اسم المستخدم أو كلمة المرور غير صحيحة"; return; }
+      var btn = $("#auth-btn"); btn.disabled = true;
+      Box.verifyPassword(pw, u.salt, u.hash).then(function (ok) {
+        btn.disabled = false;
+        if (!ok) { err.textContent = "اسم المستخدم أو كلمة المرور غير صحيحة"; return; }
+        if (u.status === "pending") { authNotice = "حسابك لا يزال بانتظار موافقة مدير النظام."; authView = "pending-notice"; renderAuthGate(); return; }
+        if (u.status === "rejected") { authNotice = "تم رفض هذا الحساب. تواصل مع مدير النظام."; authView = "pending-notice"; renderAuthGate(); return; }
+        S.currentUser = { id: u.id, name: u.name, username: u.username, role: u.role, sector: u.sector };
+        if (remember) localStorage.setItem("cat_user", String(u.id)); else sessionStorage.setItem("cat_user", String(u.id));
+        hideAuthGate(); render();
+      });
+    });
+    $("#auth-to-register").addEventListener("click", function (e) { e.preventDefault(); authView = "register"; renderAuthGate(); });
+  }
+
+  function bindRegister() {
+    $("#auth-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var name = $("#af-name").value.trim(), username = $("#af-username").value.trim();
+      var sector = $("#af-sector").value;
+      var pw = $("#af-pw").value, pw2 = $("#af-pw2").value;
+      var err = $("#auth-err");
+      if (!name || !username) { err.textContent = "الاسم واسم المستخدم مطلوبان"; return; }
+      if (!sector) { err.textContent = "اختر القطاع"; return; }
+      if (pw.length < 6) { err.textContent = "كلمة المرور 6 أحرف على الأقل"; return; }
+      if (pw !== pw2) { err.textContent = "كلمتا المرور غير متطابقتين"; return; }
+      if (users().some(function (x) { return (x.usernameLower || x.username.toLowerCase()) === username.toLowerCase(); })) {
+        err.textContent = "اسم المستخدم مستخدَم بالفعل"; return;
+      }
+      var btn = $("#auth-btn"); btn.disabled = true;
+      Box.hashPassword(pw).then(function (h) {
+        var nextId = users().reduce(function (m, x) { return Math.max(m, x.id || 0); }, 0) + 1;
+        var u = { id: nextId, name: name, username: username, usernameLower: username.toLowerCase(), salt: h.salt, hash: h.hash, role: "owner_rep", sector: sector, status: "pending", createdAt: I.todayISO() };
+        users().push(u);
+        commitChange("طلب حساب جديد: " + name, function () {
+          authNotice = "تم إرسال طلبك بنجاح. سيتمكن مدير النظام من مراجعته والموافقة عليه، وبعدها يمكنك تسجيل الدخول.";
+          authView = "pending-notice"; renderAuthGate();
+        }, "تم إرسال الطلب");
+      }).catch(function () { btn.disabled = false; err.textContent = "تعذّر إرسال الطلب"; });
+    });
+    $("#auth-to-login").addEventListener("click", function (e) { e.preventDefault(); authView = "login"; renderAuthGate(); });
+  }
+
+  function bindNotice() {
+    $("#auth-back").addEventListener("click", function () { authView = "login"; renderAuthGate(); });
+  }
+
   function doUnlock() {
     var pw = $("#lock-pw").value;
     var remember = $("#lock-remember").checked;
@@ -595,8 +1039,8 @@
     Box.decryptEnvelope(envelope, pw).then(function (cat) {
       S.catalog = normalizeCatalog(cat); S.password = pw;
       if (remember) localStorage.setItem("cat_pw", pw); else sessionStorage.setItem("cat_pw", pw);
-      hideLock(); hideBoot(); render();
-      if (S.token) refreshSha();
+      hideLock();
+      afterCatalogUnlocked();
     }).catch(function () {
       btn.disabled = false; btn.innerHTML = ICON("unlock") + "فتح الكتالوج";
       $("#lock-err").textContent = "كلمة المرور غير صحيحة";
@@ -614,7 +1058,7 @@
       if (pw) {
         Box.decryptEnvelope(envelope, pw).then(function (cat) {
           S.catalog = normalizeCatalog(cat); S.password = pw;
-          hideBoot(); render(); if (S.token) refreshSha();
+          afterCatalogUnlocked();
         }).catch(function () { sessionStorage.removeItem("cat_pw"); localStorage.removeItem("cat_pw"); showLock(); });
       } else { showLock(); }
     }).catch(function (err) {
@@ -623,6 +1067,26 @@
       $("#lock-err").textContent = "تعذّر تحميل البيانات. تأكد من الاتصال.";
       console.error(err);
     });
+  }
+
+  /* Catalog is decrypted — now resolve the PERSONAL account layer. A
+   * remembered login restores instantly; otherwise the auth gate takes over
+   * (bootstrap / login / register) before the main app is ever rendered. */
+  function afterCatalogUnlocked() {
+    if (S.token) refreshSha();
+    var remembered = localStorage.getItem("cat_user") || sessionStorage.getItem("cat_user");
+    if (remembered) {
+      var uid = +remembered;
+      var u = users().filter(function (x) { return x.id === uid && x.status === "approved"; })[0];
+      if (u) {
+        S.currentUser = { id: u.id, name: u.name, username: u.username, role: u.role, sector: u.sector };
+        hideBoot(); hideAuthGate(); render();
+        return;
+      }
+      localStorage.removeItem("cat_user"); sessionStorage.removeItem("cat_user");
+    }
+    hideBoot();
+    showAuthGate();
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot); else boot();

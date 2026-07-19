@@ -13,6 +13,7 @@
     sha: null,
     password: null,
     token: null, /* extracted from the decrypted catalog itself — see normalizeCatalog() in app-ui.js */
+    currentUser: null, /* logged-in personal account — see auth gate in app-ui.js. null = not logged in yet */
     search: "",
     sort: "title",
     showFilters: true,
@@ -71,8 +72,22 @@
   }
 
   /* ---------------- Derived data ---------------- */
-  function services() { return (S.catalog && S.catalog.services) || []; }
+  /* All services, unfiltered — for admin tooling that must see/act on everything
+   * regardless of the current user's sector scope (approvals, exports, etc). */
+  function allServices() { return (S.catalog && S.catalog.services) || []; }
+  /* The services the CURRENT user may see: everything for admins, only their
+   * own sector for an owner/representative account. This is the one function
+   * the whole browsing UI reads from, so scoping it here scopes everything. */
+  function services() {
+    var all = allServices();
+    var u = S.currentUser;
+    if (u && u.role !== "admin") return all.filter(function (s) { return s.sector === u.sector; });
+    return all;
+  }
   function refs() { S.catalog.refs = S.catalog.refs || { departments: [], owners: [], representatives: [] }; return S.catalog.refs; }
+  function users() { S.catalog.users = S.catalog.users || []; return S.catalog.users; }
+  function pendingEdits() { S.catalog.pendingEdits = S.catalog.pendingEdits || []; return S.catalog.pendingEdits; }
+  function isAdmin() { return !!(S.currentUser && S.currentUser.role === "admin"); }
   function uniqueSectors() { return uniq(services().map(function (s) { return s.sector; })); }
   function allValues(field) {
     var derived = services().map(function (s) { return s[field]; });
@@ -268,7 +283,7 @@
    * RENDER — shell
    * ===================================================================== */
   function render() {
-    if (!S.catalog) return;
+    if (!S.catalog || !S.currentUser) return;
     buildSectorIndex();
     var od = $("#drawer"), oo = $("#drawer-ov"); if (od) od.remove(); if (oo) oo.remove();
     var app = $("#app");
@@ -286,12 +301,20 @@
   }
 
   function topbar() {
+    var u = S.currentUser;
+    var pendingCount = isAdmin() ? (pendingEdits().filter(function (p) { return p.status === "pending"; }).length +
+      users().filter(function (x) { return x.status === "pending"; }).length) : 0;
     return '<header class="topbar"><div class="wrap topbar-inner">' +
       '<div class="brand"><div class="brand-logo">' + ICON("briefcase") + '</div>' +
       '<div class="brand-txt"><b>' + esc(C.brand.title) + '</b><span>' + esc(C.brand.program) + " · " + esc(C.brand.year) + '</span></div></div>' +
       '<div class="topsearch"><label class="sr-only" for="top-q">بحث</label>' + ICON("search") +
         '<input id="top-q" type="search" placeholder="ابحث في الخدمات…" value="' + attr(S.search) + '"></div>' +
       '<div class="topbar-spacer"></div>' +
+      (isAdmin() ? '<button class="icon-btn" data-act="review" title="طلبات المراجعة" style="position:relative">' + ICON("list") +
+        (pendingCount ? '<span class="notif-dot">' + pendingCount + '</span>' : '') + '</button>' : '') +
+      (u ? '<button class="user-pill" data-act="settings" title="الحساب">' +
+        '<span class="avatar" style="width:26px;height:26px;font-size:10px;background:' + avatarColor(u.name) + '">' + esc(initials(u.name)) + '</span>' +
+        '<span class="up-txt"><b>' + esc(u.name) + '</b><span>' + (u.role === "admin" ? "مدير النظام" : shortSector(u.sector)) + '</span></span></button>' : '') +
       '<button class="icon-btn" data-act="theme" title="المظهر">' + ICON(isDark() ? "sun" : "moon") + '</button>' +
       '<button class="icon-btn" data-act="settings" title="الإعدادات">' + ICON("gear") + '</button>' +
       '</div></header>';
@@ -366,8 +389,8 @@
         '</select>' +
         '<span class="count-pill"><b>' + list.length + '</b> من ' + services().length + ' خدمة</span>' +
         '<div class="topbar-spacer"></div>' +
-        (S.token ? '<button class="btn sm" data-act="manage">' + ICON("list") + 'إدارة القوائم</button>' +
-                   '<button class="btn primary sm" data-act="add-service">' + ICON("plus") + 'إضافة خدمة</button>' : '') +
+        (isAdmin() ? '<button class="btn sm" data-act="manage">' + ICON("list") + 'إدارة القوائم</button>' : '') +
+        (S.token && S.currentUser ? '<button class="btn primary sm" data-act="add-service">' + ICON("plus") + 'إضافة خدمة</button>' : '') +
       '</div>';
 
     if (S.showFilters) html += filterPanel();
@@ -562,7 +585,7 @@
         (s.stageRationale ? '<div class="field"><div class="field-lbl">' + ICON("info") + 'مبرر تصنيف المرحلة</div><div class="rationale">' + esc(s.stageRationale) + '</div></div>' : "") +
         '<div class="field"><div class="field-lbl">' + ICON("calendar") + 'آخر تحديث</div><div class="field-val mono">' + esc(fmtDate(s.updatedAt)) + '</div></div>' +
       '</div>' +
-      (S.token ? '<div class="drawer-foot"><button class="btn primary" data-act="edit-service" data-id="' + attr(s.id) + '">' + ICON("edit") + 'تعديل</button>' +
+      (S.token && S.currentUser ? '<div class="drawer-foot"><button class="btn primary" data-act="edit-service" data-id="' + attr(s.id) + '">' + ICON("edit") + 'تعديل</button>' +
         '<button class="btn danger" data-act="delete-service" data-id="' + attr(s.id) + '">' + ICON("trash") + 'حذف</button>' +
         '<div class="topbar-spacer"></div><button class="btn ghost" data-act="close-drawer">إغلاق</button></div>' :
         '<div class="drawer-foot"><button class="btn ghost block" data-act="close-drawer">إغلاق</button></div>') ;
@@ -591,6 +614,7 @@
     uniqueSectors: uniqueSectors, isDark: isDark, palette: palette, buildSectorIndex: buildSectorIndex,
     b64EncodeUnicode: b64EncodeUnicode, apiUrl: apiUrl, authHeaders: authHeaders,
     openService: openService, countBy: countBy, sectorColor: sectorColor, stageColor: stageColor,
-    avatarColor: avatarColor, initials: initials, fmtDate: fmtDate
+    avatarColor: avatarColor, initials: initials, fmtDate: fmtDate,
+    allServices: allServices, users: users, pendingEdits: pendingEdits, isAdmin: isAdmin
   };
 })();
