@@ -130,7 +130,6 @@
     list.sort(function (a, b) {
       if (sort === "sector") return (a.sector || "").localeCompare(b.sector || "", "ar") || (a.title || "").localeCompare(b.title || "", "ar");
       if (sort === "stage") { var so = ["التخطيط","التنفيذ","التوسع"]; return so.indexOf(a.stage) - so.indexOf(b.stage) || (a.title||"").localeCompare(b.title||"","ar"); }
-      if (sort === "updated") return (b.updatedAt || "").localeCompare(a.updatedAt || "");
       return (a.title || "").localeCompare(b.title || "", "ar");
     });
     return list;
@@ -385,7 +384,7 @@
         '<div class="svc-search">' + ICON("search") + '<input id="svc-q" type="search" placeholder="ابحث بالاسم أو الوصف أو المالك…" value="' + attr(S.search) + '"></div>' +
         '<button class="btn ' + (S.showFilters ? "primary" : "") + ' sm" data-act="toggle-filters">' + ICON("filter") + 'الفلاتر' + (activeFilterCount() ? ' (' + activeFilterCount() + ')' : '') + '</button>' +
         '<select class="select" id="svc-sort">' +
-          opt("title", "الاسم", S.sort) + opt("sector", "القطاع", S.sort) + opt("stage", "المرحلة", S.sort) + opt("updated", "آخر تحديث", S.sort) +
+          opt("title", "الاسم", S.sort) + opt("sector", "القطاع", S.sort) + opt("stage", "المرحلة", S.sort) +
         '</select>' +
         '<span class="count-pill"><b>' + list.length + '</b> من ' + services().length + ' خدمة</span>' +
         '<div class="topbar-spacer"></div>' +
