@@ -56,6 +56,10 @@
     return palette()[idx % palette().length];
   }
   function stageColor(key) { var s = C.stageByKey(key); return s ? (isDark() ? s.colorDark : s.color) : "var(--muted)"; }
+  /* حالة الإتاحة: تُقرأ دائمًا عبر svcStatus() لا من s.status مباشرة، حتى تظهر
+   * الخدمات القديمة (بحالة قديمة أو بلا حالة) ضمن الحالات الثلاث المعتمدة. */
+  function svcStatus(s) { return C.normalizeStatus(s && s.status); }
+  function statusColor(key) { var st = C.statusByKey(key); return st ? (isDark() ? st.colorDark : st.color) : "var(--muted)"; }
   function avatarColor(name) {
     var h = 0; name = name || "?";
     for (var i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
@@ -100,7 +104,7 @@
   }
   function countBy(field, value) {
     return services().filter(function (s) {
-      var v = s[field];
+      var v = field === "status" ? svcStatus(s) : s[field];
       return Array.isArray(v) ? v.indexOf(value) >= 0 : v === value;
     }).length;
   }
@@ -112,7 +116,7 @@
     if (f.department.length && f.department.indexOf(svc.department) < 0) return false;
     if (f.stage.length && f.stage.indexOf(svc.stage) < 0) return false;
     if (f.category.length && f.category.indexOf(svc.category) < 0) return false;
-    if (f.status.length && f.status.indexOf(svc.status) < 0) return false;
+    if (f.status.length && f.status.indexOf(svcStatus(svc)) < 0) return false;
     if (f.owner.length && f.owner.indexOf(svc.owner) < 0) return false;
     if (f.representative.length && f.representative.indexOf(svc.representative) < 0) return false;
     if (f.objective.length && !f.objective.every(function (o) { return (svc.objectives || []).indexOf(o) >= 0; })) return false;
@@ -377,6 +381,19 @@
           '<span class="cbadge">' + cnt + '</span></button>';
       }).join("") + '</div></div>';
 
+    /* حالة الإتاحة — نفس نمط بطاقات المراحل، وكل بطاقة مدخل لتصفية حالتها */
+    html += '<div class="section" id="status-anchor"><div class="section-head"><div class="ttl"><div class="si">' + ICON("power") + '</div>' +
+      '<h2>حالة إتاحة الخدمات</h2></div><span class="sub">اضغط أي حالة لعرض خدماتها</span></div>' +
+      '<div class="cards grid-3">' + C.serviceStatuses.map(function (st) {
+        var cnt = countBy("status", st.key);
+        var pct = Math.round(cnt / total * 100);
+        var col = isDark() ? st.colorDark : st.color;
+        return '<button class="sector-card" style="--c:' + col + '" data-act="goto-filter" data-field="status" data-value="' + attr(st.key) + '">' +
+          '<div class="ci">' + ICON(st.icon) + '</div>' +
+          '<div class="meta"><b>' + esc(st.label) + '</b><span>' + esc(st.desc) + ' · ' + pct + '%</span></div>' +
+          '<span class="cbadge">' + cnt + '</span></button>';
+      }).join("") + '</div></div>';
+
     /* services — merged directly under the sectors section (single page) */
     var list = filtered();
     html += '<div class="section" id="svc-anchor"><div class="section-head"><div class="ttl"><div class="si">' + ICON("grid") + '</div><h2>بطاقات الخدمات</h2></div><span class="sub">تصفّح جميع الخدمات، أو صفِّها حسب القطاع والفريق والتصنيف</span></div>' +
@@ -417,10 +434,15 @@
   function serviceCard(s) {
     var col = sectorColor(s.sector);
     var stc = stageColor(s.stage);
-    return '<article class="svc-card" style="--c:' + col + '" data-act="open" data-id="' + attr(s.id) + '">' +
+    var stat = svcStatus(s);
+    /* الخدمات غير المفعّلة تُميَّز بصريًا (باهتة + شارة حالة) حتى لا تُقرأ
+     * كخدمة متاحة عند التصفح السريع للبطاقات. */
+    var dim = stat !== "مفعلة" ? " dim-" + (stat === "متوقفة" ? "off" : "soon") : "";
+    return '<article class="svc-card' + dim + '" style="--c:' + col + '" data-act="open" data-id="' + attr(s.id) + '">' +
       '<div class="accent-line"></div><div class="body">' +
       '<div class="badges">' +
         '<span class="badge" style="--c:' + col + '"><span class="bdot"></span>' + esc(shortSector(s.sector)) + '</span>' +
+        statusBadgeHTML(stat) +
         (s.stage ? '<span class="badge" style="--c:' + stc + '">' + esc(s.stage) + '</span>' : '') +
         (s.sla ? '<span class="badge plain">' + ICON("clock") + esc(s.sla) + '</span>' : '') +
       '</div>' +
@@ -430,6 +452,13 @@
         person(s.owner, "مالك الخدمة") +
         (s.representative ? person(s.representative, "ممثل الخدمة") : "") +
       '</div></div></article>';
+  }
+  /* شارة الحالة — تُعرض على البطاقة وفي البطاقة التفصيلية بنفس اللون */
+  function statusBadgeHTML(key, useLongLabel) {
+    var st = C.statusByKey(key);
+    if (!st) return "";
+    return '<span class="badge" style="--c:' + statusColor(key) + '">' + ICON(st.icon) +
+      esc(useLongLabel ? st.label : st.short) + '</span>';
   }
   function person(name, role) {
     return '<div class="who"><span class="avatar" style="background:' + avatarColor(name) + '">' + esc(initials(name)) + '</span>' +
@@ -448,6 +477,7 @@
       if (depts.length) groups += chipFilterGroup("department", "building", "الإدارة العامة", depts);
       groups += teamGroup();
     }
+    groups += chipFilterGroup("status", "power", "حالة الإتاحة", C.serviceStatuses.map(function (s) { return s.key; }), true);
     groups += chipFilterGroup("stage", "flag", "مرحلة التحول", C.stages.map(function (s) { return s.key; }), true);
     groups += chipFilterGroup("objective", "target", "الهدف الاستراتيجي", C.taxonomy.objectives);
     groups += chipFilterGroup("category", "tag", "الفئة", allValues("category").filter(Boolean));
@@ -459,7 +489,7 @@
     var sel = S.filters[field];
     var chips = values.filter(Boolean).map(function (v) {
       var on = sel.indexOf(v) >= 0;
-      var col = field === "sector" ? sectorColor(v) : field === "stage" ? stageColor(v) : "";
+      var col = field === "sector" ? sectorColor(v) : field === "stage" ? stageColor(v) : field === "status" ? statusColor(v) : "";
       var toneCls = tone ? " tone" : "";
       var style = col ? ' style="--c:' + col + '"' : "";
       return '<button class="chip' + toneCls + (on ? " on" : "") + '"' + style + ' data-act="filter" data-field="' + field + '" data-value="' + attr(v) + '">' +
@@ -527,7 +557,7 @@
   }
   function activeFilterBar() {
     if (!activeFilterCount() && !S.search) return "";
-    var labels = { sector: "القطاع", department: "الإدارة", stage: "المرحلة", objective: "الهدف", category: "الفئة", beneficiary: "المستفيد", owner: "المالك", representative: "الممثل", status: "الحالة" };
+    var labels = { sector: "القطاع", department: "الإدارة", stage: "المرحلة", objective: "الهدف", category: "الفئة", beneficiary: "المستفيد", owner: "المالك", representative: "الممثل", status: "حالة الإتاحة" };
     var chips = "";
     for (var field in S.filters) {
       if (!S.filters.hasOwnProperty(field)) continue;
@@ -563,9 +593,10 @@
         '<div class="badges">' +
           '<span class="badge" style="--c:' + col + '"><span class="bdot"></span>' + esc(s.sector) + '</span>' +
           (s.stage ? '<span class="badge" style="--c:' + stc + '">' + (C.stageByKey(s.stage) ? C.stageByKey(s.stage).emoji + ' ' : '') + esc(s.stage) + '</span>' : '') +
-          (s.status ? '<span class="badge plain">' + esc(s.status) + '</span>' : '') +
+          statusBadgeHTML(svcStatus(s), true) +
         '</div><h2>' + esc(s.title) + '</h2></div>' +
       '<div class="drawer-body">' +
+        statusNoticeHTML(s) +
         '<div class="kv-grid" style="margin:14px 0">' +
           kv("building", "الإدارة العامة", s.department) +
           kv("building2", "الإدارة", s.unit) +
@@ -594,6 +625,16 @@
     ov.addEventListener("click", closeDrawer);
     document.addEventListener("keydown", escClose);
   }
+  /* تنبيه أعلى البطاقة التفصيلية للخدمات غير المفعّلة، مع سبب الإيقاف إن وُجد.
+   * الخدمة المفعّلة لا تحتاج تنبيهًا — الشارة في الترويسة تكفي. */
+  function statusNoticeHTML(s) {
+    var key = svcStatus(s);
+    if (key === "مفعلة") return "";
+    var st = C.statusByKey(key); if (!st) return "";
+    var col = statusColor(key);
+    return '<div class="status-notice" style="--c:' + col + '">' + ICON(st.icon) +
+      '<div><b>' + esc(st.label) + '</b><span>' + esc(s.statusNote || st.desc) + '</span></div></div>';
+  }
   function openService(id) { closeDrawer(); S.selected = id; drawer(id); }
   function kv(icon, k, v) { if (!v) return ""; return '<div class="kv"><div class="k">' + ICON(icon) + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>'; }
   function kvPerson(k, v) {
@@ -614,6 +655,7 @@
     b64EncodeUnicode: b64EncodeUnicode, apiUrl: apiUrl, authHeaders: authHeaders,
     openService: openService, countBy: countBy, sectorColor: sectorColor, stageColor: stageColor,
     avatarColor: avatarColor, initials: initials, fmtDate: fmtDate,
-    allServices: allServices, users: users, pendingEdits: pendingEdits, isAdmin: isAdmin
+    allServices: allServices, users: users, pendingEdits: pendingEdits, isAdmin: isAdmin,
+    svcStatus: svcStatus, statusColor: statusColor
   };
 })();

@@ -53,7 +53,9 @@
         "منظمات دولية",
         "أفراد"
       ],
-      statuses: ["قائمة", "قيد الإعداد", "متوقفة"]
+      /* الحالات الرسمية الثلاث — المصدر الوحيد هو CONFIG.serviceStatuses أدناه،
+       * وتُشتق هذه القائمة منه تلقائيًا كي لا تتفرّع نسختان من نفس التصنيف. */
+      statuses: []
     },
 
     /* ---- Digital transformation stages (ثلاث مراحل) ---- */
@@ -68,6 +70,37 @@
         desc: "تحقيق الأثر المستدام عبر ابتكار خدمات رقمية شاملة وسلسة",
         color: "#eb6834", colorDark: "#d95926" }
     ],
+
+    /* ---- حالة إتاحة الخدمة (Service availability status) ----
+     * ثلاث حالات فقط. تُخزَّن القيمة في الحقل `status` لكل خدمة، ويُحفظ سبب
+     * الإيقاف (إن وُجد) في الحقل `statusNote`. */
+    serviceStatuses: [
+      { key: "مفعلة", label: "مفعلة", short: "مفعلة", icon: "circleCheck",
+        desc: "متاحة حاليًا ويمكن طلبها من الجهات",
+        color: "#0f9d58", colorDark: "#12b866" },
+      { key: "قيد التفعيل", label: "قيد التفعيل", short: "قيد التفعيل", icon: "circleDots",
+        desc: "قيد الإعداد ولم تُفتح للطلب بعد",
+        color: "#d97706", colorDark: "#f59e0b" },
+      { key: "متوقفة", label: "متوقفة (مؤرشفة)", short: "متوقفة", icon: "archive",
+        desc: "أُوقفت أو أُرشفت ولا تُقدَّم حاليًا",
+        color: "#64748b", colorDark: "#94a3b8" }
+    ],
+
+    /* الحالة الافتراضية لأي خدمة بلا قيمة (الغالبية العظمى خدمات قائمة فعلًا) */
+    defaultStatus: "مفعلة",
+
+    /* تسميات قديمة كانت مستخدمة قبل توحيد الحالات — تُترجم تلقائيًا عند التحميل
+     * حتى لا تظهر خدمة بحالة غير معروفة بعد التحديث. */
+    statusLegacy: {
+      "قائمة": "مفعلة",
+      "نشطة": "مفعلة",
+      "مفعّلة": "مفعلة",
+      "قيد الإعداد": "قيد التفعيل",
+      "قيد التجهيز": "قيد التفعيل",
+      "موقوفة": "متوقفة",
+      "مؤرشفة": "متوقفة",
+      "ملغاة": "متوقفة"
+    },
 
     /* ---- Categorical palette for sectors (validated CVD-safe order) ---- */
     palette: {
@@ -88,6 +121,29 @@
     }
     return null;
   };
+
+  /* Status lookup + normalization */
+  CONFIG.statusByKey = function (key) {
+    for (var i = 0; i < CONFIG.serviceStatuses.length; i++) {
+      if (CONFIG.serviceStatuses[i].key === key) return CONFIG.serviceStatuses[i];
+    }
+    return null;
+  };
+  /* Maps any stored value onto one of the three official statuses:
+   *   فارغ            -> الحالة الافتراضية (مفعلة)
+   *   حالة رسمية      -> كما هي
+   *   تسمية قديمة     -> ما يقابلها
+   *   نص حر غير معروف -> متوقفة (نصّه الأصلي يُحفظ في statusNote عند الترحيل)
+   * أي نص حر سابق كان يعني دائمًا إيقاف/إلغاء الخدمة، ولذلك يُعامل كمتوقفة. */
+  CONFIG.normalizeStatus = function (value) {
+    var v = String(value == null ? "" : value).trim();
+    if (!v) return CONFIG.defaultStatus;
+    if (CONFIG.statusByKey(v)) return v;
+    if (CONFIG.statusLegacy[v]) return CONFIG.statusLegacy[v];
+    return "متوقفة";
+  };
+  /* واجهة موحّدة: taxonomy.statuses مشتقة دائمًا من serviceStatuses */
+  CONFIG.taxonomy.statuses = CONFIG.serviceStatuses.map(function (s) { return s.key; });
 
   root.CONFIG = CONFIG;
   if (typeof module !== "undefined" && module.exports) module.exports = CONFIG;

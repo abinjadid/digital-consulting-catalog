@@ -156,7 +156,6 @@
     s = s || {};
     var sectors = uniqueSectors();
     var cats = uniq(C.taxonomy.categories.concat(allValues("category"))).filter(Boolean);
-    var statuses = uniq(C.taxonomy.statuses.concat(services().map(function (x) { return x.status; }))).filter(Boolean);
 
     function dl(idn, values) { return '<datalist id="' + idn + '">' + uniq(values).filter(Boolean).map(function (v) { return '<option value="' + attr(v) + '">'; }).join("") + '</datalist>'; }
     function inp(name, label, val, list, req) {
@@ -201,8 +200,14 @@
       formSection("التصنيف", "tag",
         sel("stage", "مرحلة التحول الرقمي", C.stages.map(function (x) { return x.key; }), s.stage, true) +
         sel("category", "الفئة", cats, s.category, true) +
-        sel("status", "حالة الخدمة", statuses, s.status || "قائمة", true) +
         inp("sla", "الخط الزمني (SLA)", s.sla)
+      ) +
+      formSection("حالة الإتاحة", "power",
+        sel("status", "الحالة", C.serviceStatuses.map(function (x) { return x.key; }), C.normalizeStatus(s.status), false) +
+        inp("statusNote", "سبب الإيقاف / ملاحظة على الحالة", s.statusNote) +
+        '<div class="form-row full"><span class="muted" style="font-size:11.5px;line-height:1.7">' +
+          C.serviceStatuses.map(function (x) { return '<b style="color:' + (I.isDark() ? x.colorDark : x.color) + '">' + esc(x.label) + '</b>: ' + esc(x.desc); }).join(" · ") +
+        '</span></div>'
       ) +
       formSection("الارتباط الاستراتيجي", "target",
         chkGroup("objectives", "الأهداف الاستراتيجية", objOptions, s.objectives) +
@@ -269,7 +274,8 @@
     var rec = {
       title: title, sector: sector,
       department: val("department"), unit: val("unit"), owner: val("owner"), representative: val("representative"),
-      stage: val("stage"), category: val("category"), status: val("status"), sla: val("sla"),
+      stage: val("stage"), category: val("category"), sla: val("sla"),
+      status: C.normalizeStatus(val("status")), statusNote: val("statusNote"),
       objectives: chks("objectives"), beneficiaries: chks("beneficiaries"),
       description: val("description"), goals: val("goals"), prerequisites: val("prerequisites"),
       outputs: val("outputs"), stageRationale: val("stageRationale"),
@@ -367,7 +373,7 @@
   var FIELD_LABELS = {
     title: "عنوان الخدمة", sector: "القطاع", department: "الإدارة العامة", unit: "الإدارة",
     owner: "مالك الخدمة", representative: "ممثل الخدمة", stage: "المرحلة", category: "الفئة",
-    status: "الحالة", sla: "SLA", description: "الوصف", goals: "الأهداف المرجوّة",
+    status: "حالة الإتاحة", statusNote: "سبب الإيقاف", sla: "SLA", description: "الوصف", goals: "الأهداف المرجوّة",
     prerequisites: "المتطلبات", outputs: "المخرجات", stageRationale: "مبرر المرحلة",
     objectives: "الأهداف الاستراتيجية", beneficiaries: "المستفيدون"
   };
@@ -807,6 +813,12 @@
       s.id = (s.id != null && isFinite(+s.id)) ? +s.id : (i + 1);
       s.objectives = s.objectives || [];
       s.beneficiaries = s.beneficiaries || [];
+      /* حالة الإتاحة تُردّ دائمًا إلى إحدى الحالات الثلاث المعتمدة. أي نص حر
+       * قديم (مثل "إلغاء الخدمة بناء على طلب المالك") يصبح "متوقفة" مع حفظ
+       * نصّه الأصلي كسبب، فلا تضيع المعلومة ولا تبقى حالة خارج التصنيف. */
+      var norm = C.normalizeStatus(s.status);
+      if (s.status && s.status !== norm && !C.statusLegacy[s.status] && !s.statusNote) s.statusNote = s.status;
+      s.status = norm;
       return s;
     });
     cat.refs = cat.refs || { departments: [], owners: [], representatives: [] };
