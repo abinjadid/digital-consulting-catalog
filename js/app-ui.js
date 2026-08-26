@@ -81,7 +81,6 @@
       case "um-filter": umFilter = t.getAttribute("data-tab"); renderUsersPanel(); break;
       case "assign-toggle": toggleAssign(+t.getAttribute("data-svc"), +t.getAttribute("data-user"), t.getAttribute("data-field")); break;
       case "settings-theme": applyTheme(t.getAttribute("data-theme")); render(); openSettings(); break;
-      case "change-pw": changePassword(); break;
       case "export": exportData(); break;
       case "import": $("#import-file").click(); break;
       case "reload-data": reloadData(); break;
@@ -1090,13 +1089,6 @@
           '<button class="btn ' + (I.isDark() ? "primary" : "") + '" data-act="settings-theme" data-theme="dark">' + ICON("moon") + 'داكن</button>' +
         '</div>') +
 
-      (tokenSet && isAdmin() ? section("كلمة مرور الكتالوج", "lock",
-        '<p class="form-hint" style="margin-bottom:10px">تغيير كلمة المرور يُعيد تشفير البيانات بالكامل ويحفظها في المستودع. أبلغ الفريق بالكلمة الجديدة.</p>' +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap">' +
-          '<input type="password" id="pw-new" placeholder="كلمة مرور جديدة" style="flex:1;min-width:150px;height:42px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13px">' +
-          '<input type="password" id="pw-new2" placeholder="تأكيد الكلمة" style="flex:1;min-width:150px;height:42px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13px">' +
-          '<button class="btn" data-act="change-pw">' + ICON("refresh") + 'تحديث</button></div>') : '') +
-
       (isAdmin() ? section("المستخدمون والصلاحيات", "users",
         '<p class="form-hint" style="margin-bottom:10px">اعتماد الحسابات الجديدة، تغيير الأدوار والنطاق، تعيين كلمات المرور، وحذف الحسابات.</p>' +
         '<button class="btn primary" data-act="users-manage">' + ICON("users") + 'إدارة المستخدمين</button>') : '') +
@@ -1109,6 +1101,12 @@
           '<input type="file" id="import-file" accept="application/json,.json" style="display:none">' +
         '</div>') +
 
+      (isAdmin() ? section("مستوى الحماية", "unlock",
+        '<div class="auth-note" style="margin:0">' + ICON("info") +
+          '<p>كلمة مرور الكتالوج المشتركة <b>مُلغاة</b>: مفتاح فكّ التشفير مضمّن في صفحة الموقع، ' +
+          'فأي شخص يصل إلى الرابط يستطيع قراءة كل بيانات الكتالوج <b>واستخراج رمز الكتابة في GitHub</b>. ' +
+          'الحسابات والأدوار تنظيمية في الواجهة ولا تمنع ذلك تقنيًا. عامِل الرابط نفسه كسرّ.</p></div>') : '') +
+
       section("الجلسة", "logout",
         '<button class="btn danger" data-act="lock-app">' + ICON("lock") + 'قفل التطبيق (تسجيل الخروج)</button>') +
 
@@ -1119,19 +1117,6 @@
     return '<div style="padding:16px 0;border-bottom:1px solid var(--border)"><div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">' +
       '<div style="width:26px;height:26px;border-radius:8px;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent)">' + ICON(icon) + '</div>' +
       '<b style="font-size:13.5px">' + esc(title) + '</b></div>' + inner + '</div>';
-  }
-
-  function changePassword() {
-    var a = ($("#pw-new") || {}).value || "", b = ($("#pw-new2") || {}).value || "";
-    if (a.length < 6) { toast("كلمة المرور قصيرة (6 أحرف على الأقل)", "err"); return; }
-    if (a !== b) { toast("الكلمتان غير متطابقتين", "err"); return; }
-    var old = S.password; S.password = a;
-    toast("جارٍ إعادة التشفير…", "info");
-    persist("تغيير كلمة مرور الكتالوج").then(function () {
-      if (localStorage.getItem("cat_pw")) localStorage.setItem("cat_pw", a);
-      if (sessionStorage.getItem("cat_pw")) sessionStorage.setItem("cat_pw", a);
-      toast("تم تحديث كلمة المرور", "ok"); closeModal();
-    }).catch(function (err) { S.password = old; toast("فشل التحديث", "err", String(err.message || err)); });
   }
 
   /* ---------------- Export / Import ---------------- */
@@ -1170,13 +1155,15 @@
       .catch(function (err) { toast("تعذّر التحديث", "err", String(err.message || err)); });
   }
   function lockApp() {
-    sessionStorage.removeItem("cat_pw"); localStorage.removeItem("cat_pw");
+    /* الخروج يُنهي الجلسة الشخصية فقط — البيانات تُفكّ تلقائيًا بمفتاح مضمّن،
+     * فلا توجد طبقة كلمة مرور مشتركة يُعاد إليها. */
     sessionStorage.removeItem("cat_user"); localStorage.removeItem("cat_user");
-    S.password = null; S.catalog = null; S.token = null; S.sha = null; S.currentUser = null;
-    authView = "login";
+    sessionStorage.removeItem("cat_pw"); localStorage.removeItem("cat_pw"); /* بقايا النسخ السابقة */
+    S.currentUser = null; S.selected = null;
+    authView = "login"; authNotice = "";
     closeModal(); closeDrawer();
-    var g = $("#authgate"); if (g) g.remove();
-    showLock();
+    $("#app").innerHTML = "";
+    showAuthGate();
   }
 
   /* =====================================================================
@@ -1223,40 +1210,21 @@
   }
   function hideBoot() { var b = $("#boot"); if (b) { b.style.transition = ".3s"; b.style.opacity = "0"; setTimeout(function () { b.remove(); }, 300); } }
 
-  function showLock(errMsg) {
+  /* شاشة عطل نهائي — تحلّ محل شاشة كلمة المرور السابقة: لم يعد هناك ما
+   * يدخله المستخدم هنا، فالحالة الوحيدة الممكنة هي فشل التحميل أو فكّ التشفير. */
+  function showFatal(title, detail) {
     hideBoot();
-    if ($("#lock")) { if (errMsg) setLockErr(errMsg); return; }
-    var l = document.createElement("div"); l.className = "lock-screen"; l.id = "lock";
+    if ($("#fatal")) return;
+    var l = document.createElement("div"); l.className = "lock-screen"; l.id = "fatal";
     l.innerHTML =
       '<div class="lock-card">' +
-        '<div class="lock-logo">' + ICON("lock") + '</div>' +
-        '<h1>' + esc(C.brand.title) + '</h1>' +
-        '<div class="p">' + esc(C.brand.program) + ' · ' + esc(C.brand.year) + '</div>' +
-        '<div class="auth-note">' + ICON("key") + '<p><b>الخطوة ١ من ٢</b> — أدخل كلمة مرور الكتالوج المشتركة لفكّ التشفير، ثم سجّل الدخول بحسابك الشخصي.</p></div>' +
-        '<form id="lock-form">' +
-          '<div class="lock-field has-label">' +
-            '<label class="lf-label" for="lock-pw">كلمة مرور الكتالوج</label>' +
-            '<span class="li" style="top:calc(50% + 13px)">' + ICON("key") + '</span>' +
-            '<input type="password" id="lock-pw" placeholder="كلمة المرور المشتركة" autocomplete="current-password" autofocus>' +
-            '<button type="button" class="reveal" id="lock-reveal" aria-label="إظهار كلمة المرور" style="top:calc(50% + 13px)">' + ICON("eye") + '</button></div>' +
-          '<label class="lock-remember"><input type="checkbox" id="lock-remember"> تذكّرني على هذا الجهاز</label>' +
-          '<div class="lock-err" id="lock-err">' + (errMsg ? ICON("info") + '<span>' + esc(errMsg) + '</span>' : "") + '</div>' +
-          '<button type="submit" class="btn primary block" id="lock-btn">' + ICON("unlock") + 'فتح الكتالوج</button>' +
-        '</form>' +
-        '<div class="lock-foot">' + ICON("info") + ' البيانات مشفّرة بمعيار AES‑256. لا يمكن قراءتها دون كلمة المرور الصحيحة.</div>' +
+        '<div class="lock-logo" style="background:var(--danger)">' + ICON("info") + '</div>' +
+        '<h1>' + esc(title) + '</h1>' +
+        '<div class="p">' + esc(detail) + '</div>' +
+        '<button type="button" class="btn primary block" onclick="location.reload()">' + ICON("refresh") + 'إعادة المحاولة</button>' +
       '</div>';
     document.body.appendChild(l);
-    $("#lock-form").addEventListener("submit", function (e) { e.preventDefault(); doUnlock(); });
-    $("#lock-reveal").addEventListener("click", function () {
-      var i = $("#lock-pw"); i.type = i.type === "password" ? "text" : "password"; i.focus();
-    });
-    setTimeout(function () { var i = $("#lock-pw"); if (i) i.focus(); }, 50);
   }
-  function setLockErr(msg) {
-    var e = $("#lock-err"); if (!e) return;
-    e.innerHTML = msg ? ICON("info") + '<span>' + esc(msg) + '</span>' : "";
-  }
-  function hideLock() { var l = $("#lock"); if (l) { l.style.transition = ".3s"; l.style.opacity = "0"; setTimeout(function () { l.remove(); }, 300); } }
 
   /* =====================================================================
    * AUTH GATE — personal account layer (bootstrap / login / register)
@@ -1520,40 +1488,24 @@
     $("#auth-back").addEventListener("click", function () { authView = "login"; renderAuthGate(); });
   }
 
-  function doUnlock() {
-    var pw = $("#lock-pw").value;
-    var remember = $("#lock-remember").checked;
-    if (!pw) return;
-    var btn = $("#lock-btn"); btn.disabled = true; btn.innerHTML = '<span class="b-spin" style="width:18px;height:18px;border-width:2px;margin:0"></span> جارٍ الفتح…';
-    Box.decryptEnvelope(envelope, pw).then(function (cat) {
-      S.catalog = normalizeCatalog(cat); S.password = pw;
-      if (remember) localStorage.setItem("cat_pw", pw); else sessionStorage.setItem("cat_pw", pw);
-      hideLock();
-      afterCatalogUnlocked();
-    }).catch(function () {
-      btn.disabled = false; btn.innerHTML = ICON("unlock") + "فتح الكتالوج";
-      setLockErr("كلمة المرور غير صحيحة");
-      var i = $("#lock-pw"); i.value = ""; i.focus();
-    });
-  }
-
   function boot() {
     var pref = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
     applyTheme(localStorage.getItem("cat_theme") || pref);
     showBoot();
     fetchEnvelope().then(function (env) {
       envelope = env;
-      var pw = sessionStorage.getItem("cat_pw") || localStorage.getItem("cat_pw");
-      if (pw) {
-        Box.decryptEnvelope(envelope, pw).then(function (cat) {
-          S.catalog = normalizeCatalog(cat); S.password = pw;
-          afterCatalogUnlocked();
-        }).catch(function () { sessionStorage.removeItem("cat_pw"); localStorage.removeItem("cat_pw"); showLock(); });
-      } else { showLock(); }
+      /* لا تُطلب كلمة مرور مشتركة — المفتاح مضمّن في الإعدادات، والبوابة
+       * الوحيدة أمام المستخدم هي حسابه الشخصي. */
+      var pw = C.catalogKey;
+      Box.decryptEnvelope(envelope, pw).then(function (cat) {
+        S.catalog = normalizeCatalog(cat); S.password = pw;
+        afterCatalogUnlocked();
+      }).catch(function (err) {
+        showFatal("تعذّر فكّ تشفير البيانات", "مفتاح فكّ التشفير في إعدادات التطبيق لا يطابق الملف المنشور. أعِد بناء البيانات بالمفتاح نفسه.");
+        console.error(err);
+      });
     }).catch(function (err) {
-      hideBoot();
-      showLock();
-      $("#lock-err").textContent = "تعذّر تحميل البيانات. تأكد من الاتصال.";
+      showFatal("تعذّر تحميل البيانات", "تأكد من الاتصال بالإنترنت ثم أعِد تحميل الصفحة.");
       console.error(err);
     });
   }
