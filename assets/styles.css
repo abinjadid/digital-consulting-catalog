@@ -106,6 +106,9 @@ body {
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); border:0; }
 .spin { animation: spin 1s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
+/* مقاس أساسي لكل أيقونة (انظر ICON في js/icons.js) — أي قاعدة أخرى مثل
+   `.badge svg` أو `.modal-head .mi svg` أعلى تخصيصًا وتتجاوزه. */
+.ic { width:16px; height:16px; flex:none; }
 .svg-14 svg { width:14px; height:14px; } .svg-16 svg { width:16px; height:16px; }
 .svg-18 svg { width:18px; height:18px; } .svg-20 svg { width:20px; height:20px; }
 

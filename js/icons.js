@@ -54,9 +54,13 @@
     analysis: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="m20 20-4.9-4.9"/><path d="M8 12.5v-2M10.5 12.5v-4M13 12.5v-3"/>'
   };
 
+  /* كل أيقونة تحمل الصنف "ic" الذي يعطيها مقاسًا أساسيًا. بدونه كان أي أيقونة
+   * داخل حاوية بلا قاعدة CSS خاصة تتمدّد لتملأ العرض المتاح (SVG بلا width/height
+   * يأخذ الحجم الافتراضي للعنصر المستبدَل). قواعد مثل `.badge svg` أعلى تخصيصًا
+   * فتتجاوزه، لذا يبقى المقاس الأساسي شبكة أمان لا أكثر. */
   function ICON(name, attrs) {
     var body = P[name] || P.info;
-    var cls = attrs && attrs.cls ? ' class="' + attrs.cls + '"' : "";
+    var cls = ' class="ic' + (attrs && attrs.cls ? " " + attrs.cls : "") + '"';
     var sw = attrs && attrs.sw ? attrs.sw : 1.75;
     return '<svg' + cls + ' viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="' + sw +
       '" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + body + '</svg>';
