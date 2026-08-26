@@ -1095,13 +1095,15 @@
         '<p class="form-hint" style="margin-bottom:10px">اعتماد الحسابات الجديدة، تغيير الأدوار والنطاق، تعيين كلمات المرور، وحذف الحسابات.</p>' +
         '<button class="btn primary" data-act="users-manage">' + ICON("users") + 'إدارة المستخدمين</button>') : '') +
 
-      section("النسخ الاحتياطي والمزامنة", "download",
+      /* النسخ الاحتياطي والمزامنة لمدير النظام وحده: التصدير يُخرج الكتالوج
+       * كاملًا (كل الإدارات + الحسابات) فيتجاوز نطاق حساب مالك/ممثل. */
+      (isAdmin() ? section("النسخ الاحتياطي والمزامنة", "download",
         '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
           '<button class="btn" data-act="export">' + ICON("download") + 'تصدير نسخة (JSON)</button>' +
-          (isAdmin() ? '<button class="btn" data-act="import">' + ICON("upload") + 'استيراد نسخة</button>' : '') +
+          '<button class="btn" data-act="import">' + ICON("upload") + 'استيراد نسخة</button>' +
           '<button class="btn" data-act="reload-data">' + ICON("refresh") + 'تحديث من المستودع</button>' +
           '<input type="file" id="import-file" accept="application/json,.json" style="display:none">' +
-        '</div>') +
+        '</div>') : '') +
 
       (isAdmin() ? section("مستوى الحماية", "unlock",
         '<div class="auth-note" style="margin:0">' + ICON("info") +
@@ -1123,6 +1125,9 @@
 
   /* ---------------- Export / Import ---------------- */
   function exportData() {
+    /* التصدير يشمل كل الإدارات وكل الحسابات (بما فيها بصمات كلمات المرور)،
+     * فهو صلاحية مدير نظام حصرًا — والزر وحده لا يكفي كضابط. */
+    if (!isAdmin()) { toast("التصدير متاح لمدير النظام فقط", "err"); return; }
     /* the plaintext backup file is not encrypted at rest — never include the write token in it */
     var clean = Object.assign({}, S.catalog); delete clean.writeToken;
     var blob = new Blob([JSON.stringify(clean, null, 2)], { type: "application/json" });
