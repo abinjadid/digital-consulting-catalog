@@ -264,7 +264,21 @@
     document.addEventListener("keydown", escClose);
     return m;
   }
-  function closeModal() { var m = $("#modal"); if (m) { m.classList.remove("show"); setTimeout(function () { m.remove(); }, 200); } document.removeEventListener("keydown", escClose); }
+  /* A closing modal lingers ~200ms for the fade-out. During that window a
+   * replacement modal can already be in the DOM, so ids would be duplicated and
+   * document.querySelector() would resolve to the DYING node — panels then
+   * rendered into a element about to be removed and came up blank. Strip every
+   * id from the outgoing subtree so lookups can only ever hit the live modal. */
+  function closeModal() {
+    var m = $("#modal");
+    if (m) {
+      m.removeAttribute("id");
+      $all("[id]", m).forEach(function (el) { el.removeAttribute("id"); });
+      m.classList.remove("show");
+      setTimeout(function () { m.remove(); }, 200);
+    }
+    document.removeEventListener("keydown", escClose);
+  }
   function escClose(e) { if (e.key === "Escape") { closeModal(); closeDrawer(); } }
 
   function confirmDialog(opts) {

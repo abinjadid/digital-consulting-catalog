@@ -74,6 +74,11 @@
       case "user-deactivate": userDeactivate(+value); break;
       case "user-reactivate": userReactivate(+value); break;
       case "user-assign": openAssign(+value); break;
+      case "user-reset-pw": userResetPassword(+value); break;
+      case "user-delete": userDelete(+value); break;
+      case "user-create": openUserCreate(); break;
+      case "users-manage": accountsView = null; closeModal(); openUsers(); break;
+      case "um-filter": umFilter = t.getAttribute("data-tab"); renderUsersPanel(); break;
       case "assign-toggle": toggleAssign(+t.getAttribute("data-svc"), +t.getAttribute("data-user"), t.getAttribute("data-field")); break;
       case "settings-theme": applyTheme(t.getAttribute("data-theme")); render(); openSettings(); break;
       case "change-pw": changePassword(); break;
@@ -434,12 +439,13 @@
   }
 
   function openReview() {
+    accountsView = "review";
     reviewTab = "edits";
     var m = openModal(
       '<div class="modal-head"><div class="mi">' + ICON("list") + '</div><h2>طلبات المراجعة</h2>' +
       '<button class="icon-btn" id="rev-close" style="margin-inline-start:auto">' + ICON("close") + '</button></div>' +
       '<div class="modal-body manage-body"><div id="review-shell"></div></div>');
-    $("#rev-close", m).addEventListener("click", closeModal);
+    $("#rev-close", m).addEventListener("click", function () { accountsView = null; closeModal(); });
     renderReview();
   }
   function renderReview() {
@@ -470,11 +476,11 @@
       list.innerHTML = pend.length ? pend.map(analysisRowHTML).join("")
         : reviewEmpty("لا توجد خدمات جديدة بانتظار التحليل.");
     } else {
-      var us = users().slice().sort(function (a, b) {
-        var order = { pending: 0, approved: 1, rejected: 2 };
-        return (order[a.status] - order[b.status]) || b.id - a.id;
-      });
-      list.innerHTML = us.length ? us.map(userRowHTML).join("") : reviewEmpty("لا يوجد مستخدمون بعد.");
+      /* هذا طابور مراجعة: الحسابات المعلّقة فقط. الإدارة الكاملة لها لوحتها. */
+      var us = users().filter(function (u) { return u.status === "pending"; }).sort(function (a, b) { return b.id - a.id; });
+      list.innerHTML =
+        '<button class="btn block" data-act="users-manage" style="margin-bottom:12px">' + ICON("users") + 'فتح لوحة إدارة المستخدمين</button>' +
+        (us.length ? us.map(userRowHTML).join("") : reviewEmpty("لا توجد طلبات حسابات جديدة."));
     }
   }
   var actionLabel = { add: "إضافة", edit: "تعديل", delete: "حذف" };
@@ -568,94 +574,344 @@
     commitChange("رفض طلب: " + e.titleSnapshot, renderReviewList, "تم الرفض");
   }
 
-  /* ---- Accounts tab: approve/reject signups, adjust role/sector, revoke ---- */
+  /* =====================================================================
+   * ACCOUNTS — عرض موحّد لبطاقة المستخدم، تستخدمه لوحة المراجعة (المعلّقة فقط)
+   * ولوحة «إدارة المستخدمين» الكاملة على حد سواء.
+   * ===================================================================== */
   var ROLE_LABEL = { admin: "مدير النظام", owner_rep: "مالك/ممثل خدمات" };
+  var ROLE_ICON = { admin: "key", owner_rep: "user" };
+
+  function roleBadge(role) {
+    return '<span class="role-badge ' + (role === "admin" ? "admin" : "owner") + '">' +
+      ICON(ROLE_ICON[role] || "user") + esc(ROLE_LABEL[role] || role) + '</span>';
+  }
+
+  /* آخر مدير نظام نشط لا يجوز تعطيله أو تنزيل دوره أو حذفه — وإلا أُغلق النظام
+   * على الجميع بلا أي حساب قادر على الاعتماد. */
+  function otherActiveAdmins(uid) {
+    return users().filter(function (x) {
+      return x.role === "admin" && x.status === "approved" && x.id !== uid;
+    }).length;
+  }
+  function guardLastAdmin(u, what) {
+    if (u.role === "admin" && u.status === "approved" && otherActiveAdmins(u.id) === 0) {
+      toast("تعذّر " + what, "err", "هذا آخر حساب مدير نظام نشط — عيّن مديرًا آخر أولًا");
+      return false;
+    }
+    return true;
+  }
+
   function userRowHTML(u) {
-    var roleSel = '<select class="mini-select" data-act="user-role" data-value="' + u.id + '">' +
-      '<option value="owner_rep"' + (u.role === "owner_rep" ? " selected" : "") + '>مالك/ممثل خدمات</option>' +
-      '<option value="admin"' + (u.role === "admin" ? " selected" : "") + '>مدير النظام</option>' +
-      '</select>';
-    var sectorSel = "", deptSel = "";
+    var isSelf = S.currentUser && S.currentUser.id === u.id;
+    var cls = u.status === "pending" ? " is-pending" : (u.status === "rejected" ? " is-off" : "");
+
+    var ctl = "";
+    if (!isSelf) {
+      ctl += '<select class="mini-select" data-act="user-role" data-value="' + u.id + '">' +
+        '<option value="owner_rep"' + (u.role === "owner_rep" ? " selected" : "") + '>مالك/ممثل خدمات</option>' +
+        '<option value="admin"' + (u.role === "admin" ? " selected" : "") + '>مدير النظام</option>' +
+        '</select>';
+    }
     if (u.role !== "admin") {
-      sectorSel = '<select class="mini-select" data-act="user-sector" data-value="' + u.id + '">' +
+      ctl += '<select class="mini-select" data-act="user-sector" data-value="' + u.id + '">' +
         '<option value="">اختر القطاع…</option>' +
-        uniqueSectors().map(function (s) { return '<option value="' + attr(s) + '"' + (u.sector === s ? " selected" : "") + '>' + esc(s) + '</option>'; }).join("") +
+        uniqueSectors().map(function (x) { return '<option value="' + attr(x) + '"' + (u.sector === x ? " selected" : "") + '>' + esc(x) + '</option>'; }).join("") +
         '</select>';
       var deps = departmentsOfSector(u.sector);
-      deptSel = '<select class="mini-select" data-act="user-department" data-value="' + u.id + '"' + (u.sector ? "" : " disabled") + '>' +
+      ctl += '<select class="mini-select" data-act="user-department" data-value="' + u.id + '"' + (u.sector ? "" : " disabled") + '>' +
         '<option value="">' + (u.sector ? "اختر الإدارة العامة…" : "اختر القطاع أولًا…") + '</option>' +
         deps.map(function (d) { return '<option value="' + attr(d) + '"' + (u.department === d ? " selected" : "") + '>' + esc(d) + '</option>'; }).join("") +
         '</select>';
     }
-    var actions;
+
+    var acts = "";
     if (u.status === "pending") {
-      actions = '<button class="btn primary sm" data-act="user-approve" data-value="' + u.id + '">' + ICON("check") + 'قبول</button>' +
-        '<button class="btn danger sm" data-act="user-reject" data-value="' + u.id + '">' + ICON("close") + 'رفض</button>';
+      acts += '<button class="btn primary sm" data-act="user-approve" data-value="' + u.id + '">' + ICON("check") + 'قبول الحساب</button>' +
+              '<button class="btn danger sm" data-act="user-reject" data-value="' + u.id + '">' + ICON("close") + 'رفض</button>';
     } else if (u.status === "approved") {
-      actions = (u.role === "owner_rep" && (u.department || u.sector) ? '<button class="btn sm" data-act="user-assign" data-value="' + u.id + '">' + ICON("briefcase") + 'تعيين لخدمات</button>' : "") +
-        '<button class="btn danger sm" data-act="user-deactivate" data-value="' + u.id + '">' + ICON("lock") + 'تعطيل</button>';
+      if (u.role === "owner_rep" && (u.department || u.sector)) {
+        acts += '<button class="btn sm" data-act="user-assign" data-value="' + u.id + '">' + ICON("briefcase") + 'تعيين لخدمات</button>';
+      }
+      acts += '<button class="btn sm" data-act="user-reset-pw" data-value="' + u.id + '">' + ICON("key") + 'كلمة مرور جديدة</button>';
+      if (!isSelf) acts += '<button class="btn danger sm" data-act="user-deactivate" data-value="' + u.id + '">' + ICON("lock") + 'تعطيل</button>';
     } else {
-      actions = '<button class="btn primary sm" data-act="user-reactivate" data-value="' + u.id + '">' + ICON("check") + 'إعادة تفعيل</button>';
+      acts += '<button class="btn primary sm" data-act="user-reactivate" data-value="' + u.id + '">' + ICON("check") + 'إعادة تفعيل</button>';
     }
-    return '<div class="rv-card">' +
-      '<div class="rv-head"><span class="avatar" style="width:28px;height:28px;font-size:10px;flex:none;background:' + I.avatarColor(u.name) + '">' + esc(I.initials(u.name)) + '</span>' +
-      '<b class="rv-title">' + esc(u.name) + '</b><span class="muted" style="font-size:11px;white-space:nowrap">@' + esc(u.username) + '</span>' + statusBadge(u.status) + '</div>' +
-      '<div class="rv-acts" style="margin-top:10px">' + roleSel + sectorSel + deptSel + '</div>' +
-      '<div class="rv-acts">' + actions + '</div>' +
-      '</div>';
+    if (!isSelf) acts += '<button class="btn danger sm" data-act="user-delete" data-value="' + u.id + '">' + ICON("trash") + 'حذف نهائي</button>';
+
+    var scope = u.role === "admin"
+      ? ICON("layers") + '<span>وصول كامل لجميع القطاعات والإدارات</span>'
+      : (u.department
+          ? ICON("building") + '<span>' + esc(u.department) + '</span>' + ICON("layers") + '<span class="muted">' + esc(u.sector || "—") + '</span>'
+          : ICON("info") + '<span class="muted">لم يُحدَّد نطاق بعد — لن يرى أي خدمة</span>');
+
+    return '<div class="um-card' + cls + '">' +
+      '<div class="um-top">' +
+        '<span class="avatar" style="width:34px;height:34px;font-size:12px;flex:none;background:' + I.avatarColor(u.name) + '">' + esc(I.initials(u.name)) + '</span>' +
+        '<div class="um-id"><b>' + esc(u.name) + (isSelf ? ' <span class="muted" style="font-weight:500">(أنت)</span>' : '') + '</b>' +
+          '<span>@' + esc(u.username) + ' · انضم ' + esc(I.fmtDate(u.createdAt)) + '</span></div>' +
+        roleBadge(u.role) + statusBadge(u.status) +
+      '</div>' +
+      '<div class="um-scope">' + scope + '</div>' +
+      (ctl ? '<div class="um-ctl">' + ctl + '</div>' : '') +
+      '<div class="um-acts">' + acts + '</div>' +
+    '</div>';
   }
+
+  /* ---- لوحة إدارة المستخدمين (مدير النظام فقط) ---- */
+  var umFilter = "all";   /* all | pending | approved | rejected */
+  var umSearch = "";
+
+  function openUsers(restore) {
+    if (!isAdmin()) { toast("هذه اللوحة لمدير النظام فقط", "err"); return; }
+    if (!restore) { umFilter = "all"; umSearch = ""; }
+    accountsView = "users";
+    var m = openModal(
+      '<div class="modal-head"><div class="mi">' + ICON("users") + '</div><h2>إدارة المستخدمين</h2>' +
+      '<button class="icon-btn" id="um-close" style="margin-inline-start:auto">' + ICON("close") + '</button></div>' +
+      '<div class="modal-body manage-body"><div id="um-shell"></div></div>');
+    $("#um-close", m).addEventListener("click", function () { accountsView = null; closeModal(); });
+    renderUsersPanel();
+  }
+
+  function renderUsersPanel() {
+    var shell = $("#um-shell"); if (!shell) return;
+    var all = users();
+    var counts = {
+      all: all.length,
+      pending: all.filter(function (u) { return u.status === "pending"; }).length,
+      admins: all.filter(function (u) { return u.role === "admin" && u.status === "approved"; }).length,
+      owners: all.filter(function (u) { return u.role === "owner_rep" && u.status === "approved"; }).length
+    };
+    var tabs = [
+      { k: "all", t: "الكل", n: counts.all },
+      { k: "pending", t: "بانتظار الموافقة", n: counts.pending },
+      { k: "approved", t: "نشط", n: all.filter(function (u) { return u.status === "approved"; }).length },
+      { k: "rejected", t: "معطّل/مرفوض", n: all.filter(function (u) { return u.status === "rejected"; }).length }
+    ];
+    shell.innerHTML =
+      '<div class="um-stats">' +
+        '<div class="um-stat"><b>' + counts.all + '</b><span>إجمالي الحسابات</span></div>' +
+        '<div class="um-stat' + (counts.pending ? " warn" : "") + '"><b>' + counts.pending + '</b><span>بانتظار الموافقة</span></div>' +
+        '<div class="um-stat"><b>' + counts.admins + '</b><span>مدراء النظام</span></div>' +
+        '<div class="um-stat"><b>' + counts.owners + '</b><span>ملاك وممثلون</span></div>' +
+      '</div>' +
+      '<div class="um-toolbar">' +
+        '<div class="um-search">' + ICON("search") +
+          '<input type="search" id="um-q" placeholder="ابحث بالاسم أو اسم المستخدم أو الإدارة…" value="' + attr(umSearch) + '"></div>' +
+        '<button class="btn primary sm" data-act="user-create">' + ICON("plus") + 'إضافة مستخدم</button>' +
+      '</div>' +
+      '<div class="seg-row">' + tabs.map(function (t) {
+        return '<button class="seg' + (umFilter === t.k ? " on" : "") + '" data-act="um-filter" data-tab="' + t.k + '">' +
+          '<span>' + esc(t.t) + '</span><b>' + t.n + '</b></button>';
+      }).join("") + '</div>' +
+      '<div id="um-list"></div>' +
+      permissionsReference();
+    var q = $("#um-q");
+    if (q) q.addEventListener("input", function () { umSearch = q.value; renderUsersList(); });
+    renderUsersList();
+  }
+
+  function renderUsersList() {
+    var list = $("#um-list"); if (!list) return;
+    var q = umSearch.trim().toLowerCase();
+    var rows = users().filter(function (u) {
+      if (umFilter !== "all" && u.status !== umFilter) return false;
+      if (!q) return true;
+      return [u.name, u.username, u.sector, u.department].join(" ").toLowerCase().indexOf(q) >= 0;
+    }).sort(function (a, b) {
+      var order = { pending: 0, approved: 1, rejected: 2 };
+      return (order[a.status] - order[b.status]) || (a.name || "").localeCompare(b.name || "", "ar");
+    });
+    list.innerHTML = rows.length ? rows.map(userRowHTML).join("")
+      : reviewEmpty(q ? "لا يوجد مستخدم مطابق للبحث." : "لا يوجد مستخدمون في هذه الحالة.");
+  }
+
+  /* مرجع الصلاحيات — يوضّح للمدير ما الذي يملكه كل دور فعليًا */
+  function permissionsReference() {
+    function li(ok, txt) { return '<li class="' + (ok ? "yes" : "no") + '">' + ICON(ok ? "check" : "close") + '<span>' + esc(txt) + '</span></li>'; }
+    return '<div style="margin-top:18px;padding-top:16px;border-top:1px solid var(--border)">' +
+      '<div style="display:flex;align-items:center;gap:8px;margin-bottom:11px">' + ICON("lock") +
+        '<b style="font-size:13px">الصلاحيات حسب الدور</b></div>' +
+      '<div class="perm-grid">' +
+        '<div class="perm-card"><h4>' + ICON("key") + 'مدير النظام</h4><ul>' +
+          li(true, "يستعرض ويعدّل جميع الخدمات في كل القطاعات") +
+          li(true, "يقبل الحسابات الجديدة ويحدّد أدوارها ونطاقها") +
+          li(true, "يعتمد الخدمات الجديدة ويوافق على طلبات التعديل") +
+          li(true, "يدير القوائم وكلمة مرور الكتالوج والنسخ الاحتياطي") +
+        '</ul></div>' +
+        '<div class="perm-card"><h4>' + ICON("user") + 'مالك/ممثل خدمات</h4><ul>' +
+          li(true, "يستعرض خدمات إدارته العامة فقط") +
+          li(true, "يضيف خدمة جديدة تدخل بحالة «" + C.newServiceStatus + "»") +
+          li(true, "يقترح تعديل أو حذف خدمة — بعد موافقة المدير") +
+          li(false, "لا يرى خدمات الإدارات الأخرى ولا يدير المستخدمين") +
+        '</ul></div>' +
+      '</div></div>';
+  }
+
+  /* ---- إنشاء حساب مباشرةً من المدير (يُعتمد فورًا بلا طابور انتظار) ---- */
+  function openUserCreate() {
+    var sectors = uniqueSectors();
+    var m = openModal(
+      '<div class="modal-head"><div class="mi">' + ICON("plus") + '</div><h2>إضافة مستخدم</h2>' +
+      '<button class="icon-btn" data-act="close-modal-x" style="margin-inline-start:auto">' + ICON("close") + '</button></div>' +
+      '<form id="uc-form"><div class="modal-body">' +
+        '<div class="auth-note">' + ICON("info") + '<p>الحساب المُنشأ من هنا <b>معتمد مباشرة</b> ولا يحتاج موافقة إضافية.</p></div>' +
+        '<div class="form-grid">' +
+          '<div class="form-row"><label>الاسم الكامل <span class="req">*</span></label><input type="text" name="name"></div>' +
+          '<div class="form-row"><label>اسم المستخدم <span class="req">*</span></label><input type="text" name="username" autocomplete="off"></div>' +
+          '<div class="form-row"><label>كلمة المرور <span class="req">*</span></label><input type="text" name="pw" placeholder="6 أحرف فأكثر"></div>' +
+          '<div class="form-row"><label>الدور</label><select name="role">' +
+            '<option value="owner_rep">مالك/ممثل خدمات</option><option value="admin">مدير النظام</option></select></div>' +
+          '<div class="form-row"><label>القطاع</label><select name="sector"><option value="">—</option>' +
+            sectors.map(function (x) { return '<option value="' + attr(x) + '">' + esc(x) + '</option>'; }).join("") + '</select></div>' +
+          '<div class="form-row"><label>الإدارة العامة</label><select name="department" disabled><option value="">اختر القطاع أولًا…</option></select></div>' +
+        '</div>' +
+        '<p class="form-hint" id="uc-err" style="color:var(--danger);font-weight:600"></p>' +
+      '</div>' +
+      '<div class="modal-foot"><button type="submit" class="btn primary">' + ICON("check") + 'إنشاء الحساب</button>' +
+      '<button type="button" class="btn ghost" id="uc-cancel">إلغاء</button></div></form>');
+    $("#uc-cancel", m).addEventListener("click", function () { closeModal(); refreshAccounts(); });
+
+    var secSel = $('[name="sector"]', m), depSel = $('[name="department"]', m), roleSel = $('[name="role"]', m);
+    secSel.addEventListener("change", function () {
+      var deps = departmentsOfSector(secSel.value);
+      depSel.disabled = !deps.length;
+      depSel.innerHTML = '<option value="">' + (secSel.value ? "اختر الإدارة العامة…" : "اختر القطاع أولًا…") + '</option>' +
+        deps.map(function (d) { return '<option value="' + attr(d) + '">' + esc(d) + '</option>'; }).join("");
+    });
+    roleSel.addEventListener("change", function () {
+      var admin = roleSel.value === "admin";
+      secSel.disabled = admin; depSel.disabled = admin || !secSel.value;
+    });
+    $("#uc-form", m).addEventListener("submit", function (e) { e.preventDefault(); createUserSubmit(m); });
+  }
+
+  function createUserSubmit(m) {
+    function v(n) { var el = m.querySelector('[name="' + n + '"]'); return el ? el.value.trim() : ""; }
+    var err = $("#uc-err", m);
+    var name = v("name"), username = v("username"), pw = v("pw"), role = v("role");
+    var sector = role === "admin" ? "" : v("sector"), department = role === "admin" ? "" : v("department");
+    if (!name || !username) { err.textContent = "الاسم واسم المستخدم مطلوبان"; return; }
+    if (pw.length < 6) { err.textContent = "كلمة المرور 6 أحرف على الأقل"; return; }
+    if (users().some(function (x) { return (x.usernameLower || x.username.toLowerCase()) === username.toLowerCase(); })) {
+      err.textContent = "اسم المستخدم مستخدَم بالفعل"; return;
+    }
+    if (role === "owner_rep" && !department) { err.textContent = "حدّد القطاع والإدارة العامة لحساب مالك/ممثل"; return; }
+    Box.hashPassword(pw).then(function (h) {
+      var u = {
+        id: users().reduce(function (mx, x) { return Math.max(mx, x.id || 0); }, 0) + 1,
+        name: name, username: username, usernameLower: username.toLowerCase(),
+        salt: h.salt, hash: h.hash, role: role,
+        sector: sector || null, department: department || null,
+        status: "approved", createdAt: I.todayISO()
+      };
+      users().push(u);
+      closeModal();
+      commitChange("إنشاء حساب: " + name, refreshAccounts, "تم إنشاء الحساب");
+    }).catch(function () { err.textContent = "تعذّر إنشاء الحساب"; });
+  }
+
+  /* ---- تعيين كلمة مرور جديدة لمستخدم ---- */
+  function userResetPassword(uid) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
+    var m = openModal(
+      '<div class="modal-head"><div class="mi">' + ICON("key") + '</div><h2>كلمة مرور جديدة</h2></div>' +
+      '<div class="modal-body"><p style="font-size:13px;color:var(--ink-2);line-height:1.7;margin-bottom:12px">' +
+        'تعيين كلمة مرور جديدة لحساب <b>' + esc(u.name) + '</b> (@' + esc(u.username) + '). أبلغه بها بنفسك — لا تُعرض مرة أخرى.</p>' +
+        '<input type="text" id="rp-pw" placeholder="كلمة المرور الجديدة (6 أحرف فأكثر)" ' +
+          'style="width:100%;height:44px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13.5px">' +
+        '<p class="form-hint" id="rp-err" style="color:var(--danger);font-weight:600;margin-top:8px"></p></div>' +
+      '<div class="modal-foot"><button class="btn primary" id="rp-ok">' + ICON("check") + 'تعيين</button>' +
+      '<button class="btn ghost" id="rp-cancel">إلغاء</button></div>', { sm: true });
+    $("#rp-cancel", m).addEventListener("click", function () { closeModal(); refreshAccounts(); });
+    $("#rp-ok", m).addEventListener("click", function () {
+      var pw = $("#rp-pw", m).value;
+      if (pw.length < 6) { $("#rp-err", m).textContent = "كلمة المرور 6 أحرف على الأقل"; return; }
+      Box.hashPassword(pw).then(function (h) {
+        u.salt = h.salt; u.hash = h.hash;
+        closeModal();
+        commitChange("تغيير كلمة مرور حساب: " + u.name, refreshAccounts, "تم تعيين كلمة المرور");
+      });
+    });
+  }
+
+  /* ---- حذف نهائي (لا يمس الخدمات، فقط الحساب) ---- */
+  function userDelete(uid) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
+    if (!guardLastAdmin(u, "الحذف")) return;
+    confirmDialog({
+      title: "حذف الحساب نهائيًا",
+      message: 'حذف حساب «' + u.name + '» نهائيًا؟ لا يمكن التراجع. الخدمات المرتبطة به لن تُحذف.',
+      confirm: "حذف نهائي", danger: true
+    }).then(function (ok) {
+      if (!ok) { refreshAccounts(); return; }
+      S.catalog.users = users().filter(function (x) { return x.id !== uid; });
+      commitChange("حذف حساب: " + u.name, refreshAccounts, "تم حذف الحساب");
+    });
+  }
+
+  /* بطاقات المستخدم تظهر في لوحتين (المراجعة + إدارة المستخدمين) — هذه الدالة
+   * تُحدّث المفتوحة منهما، فلا يحتاج كل إجراء أن يعرف من أين نُودي عليه. */
+  var accountsView = null;   /* "users" | "review" — panel to return to after a sub-dialog */
+  function refreshAccounts() {
+    /* closeModal() only drops the .show class and removes the node 200ms later,
+     * so a plain element lookup can still match a modal on its way out —
+     * repaint only a modal that is genuinely still open. */
+    var m = $("#modal"), live = !!(m && m.classList.contains("show"));
+    if (live && $("#um-shell")) renderUsersPanel();
+    else if (live && $("#review-list")) renderReview();
+    else if (accountsView === "users") openUsers(true);
+    else if (accountsView === "review") openReview();
+    if (S.currentUser) render();
+  }
+
   function userApprove(uid) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
     if (u.role === "owner_rep" && !u.sector) { toast("حدّد القطاع أولًا", "err"); return; }
     if (u.role === "owner_rep" && !u.department) { toast("حدّد الإدارة العامة أولًا", "err", "نطاق الحساب يُحدَّد بالإدارة — بدونها لن يرى أي خدمة"); return; }
     u.status = "approved";
-    commitChange("قبول حساب: " + u.name, renderReviewList, "تم القبول");
+    commitChange("قبول حساب: " + u.name, refreshAccounts, "تم القبول");
   }
   function userReject(uid) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
     confirmDialog({ title: "رفض الحساب", message: 'رفض حساب «' + u.name + '»؟', confirm: "رفض", danger: true }).then(function (ok) {
-      if (!ok) return;
+      if (!ok) { refreshAccounts(); return; }
       u.status = "rejected";
-      commitChange("رفض حساب: " + u.name, renderReviewList, "تم الرفض");
+      commitChange("رفض حساب: " + u.name, refreshAccounts, "تم الرفض");
     });
   }
   function userDeactivate(uid) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
-    if (u.role === "admin") {
-      var otherActiveAdmins = users().filter(function (x) { return x.role === "admin" && x.status === "approved" && x.id !== uid; }).length;
-      if (otherActiveAdmins === 0) { toast("لا يمكن التعطيل", "err", "هذا آخر حساب مدير نظام نشط — رقِّ حسابًا آخر لمدير أولًا"); return; }
-    }
+    if (!guardLastAdmin(u, "التعطيل")) return;
     confirmDialog({ title: "تعطيل الحساب", message: 'تعطيل حساب «' + u.name + '»؟ لن يستطيع تسجيل الدخول بعد الآن.', confirm: "تعطيل", danger: true }).then(function (ok) {
-      if (!ok) return;
+      if (!ok) { refreshAccounts(); return; }
       u.status = "rejected";
-      commitChange("تعطيل حساب: " + u.name, renderReviewList, "تم التعطيل");
+      commitChange("تعطيل حساب: " + u.name, refreshAccounts, "تم التعطيل");
     });
   }
   function userReactivate(uid) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
     u.status = "approved";
-    commitChange("إعادة تفعيل حساب: " + u.name, renderReviewList, "تمت إعادة التفعيل");
+    commitChange("إعادة تفعيل حساب: " + u.name, refreshAccounts, "تمت إعادة التفعيل");
   }
   function userSetRole(uid, role) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
-    if (u.role === "admin" && role !== "admin") {
-      var otherActiveAdmins = users().filter(function (x) { return x.role === "admin" && x.status === "approved" && x.id !== uid; }).length;
-      if (otherActiveAdmins === 0) { toast("لا يمكن التغيير", "err", "هذا آخر حساب مدير نظام نشط"); renderReviewList(); return; }
-    }
+    if (u.role === "admin" && role !== "admin" && !guardLastAdmin(u, "تغيير الدور")) { refreshAccounts(); return; }
     u.role = role; if (role === "admin") { u.sector = null; u.department = null; }
-    commitChange("تغيير دور مستخدم: " + u.name, renderReviewList, "تم التحديث");
+    commitChange("تغيير دور مستخدم: " + u.name, refreshAccounts, "تم التحديث");
   }
   function userSetSector(uid, sector) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
     u.sector = sector || null;
     /* الإدارة تابعة للقطاع — تغيير القطاع يُبطل إدارة لم تعد تنتمي إليه */
     if (!u.sector || departmentsOfSector(u.sector).indexOf(u.department) < 0) u.department = null;
-    commitChange("تغيير قطاع مستخدم: " + u.name, renderReviewList, "تم التحديث");
+    commitChange("تغيير قطاع مستخدم: " + u.name, refreshAccounts, "تم التحديث");
   }
   function userSetDepartment(uid, department) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
     u.department = department || null;
-    commitChange("تغيير إدارة مستخدم: " + u.name, renderReviewList, "تم التحديث");
+    commitChange("تغيير إدارة مستخدم: " + u.name, refreshAccounts, "تم التحديث");
   }
 
   /* ---- Link an approved user to specific services as owner/representative
@@ -681,7 +937,7 @@
       '<div class="modal-head"><div class="mi">' + ICON("briefcase") + '</div><h2>تعيين ' + esc(u.name) + ' لخدمات ' + esc(u.sector) + '</h2>' +
       '<button class="icon-btn" id="assign-close" style="margin-inline-start:auto">' + ICON("close") + '</button></div>' +
       '<div class="modal-body"><div class="mlist" id="assign-list">' + assignRowsHTML(uid) + '</div></div>');
-    $("#assign-close", m).addEventListener("click", closeModal);
+    $("#assign-close", m).addEventListener("click", function () { closeModal(); refreshAccounts(); });
   }
   function toggleAssign(svcId, uid, field) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
@@ -825,7 +1081,7 @@
         '<div style="display:flex;align-items:center;gap:12px">' +
           '<span class="avatar" style="width:44px;height:44px;font-size:15px;background:' + I.avatarColor(u.name) + '">' + esc(I.initials(u.name)) + '</span>' +
           '<div><b style="font-size:14px;font-weight:700;display:block">' + esc(u.name) + '</b>' +
-          '<span class="muted" style="font-size:12px">@' + esc(u.username) + ' · ' + (u.role === "admin" ? "مدير النظام" : "مالك/ممثل خدمات — " + esc(u.sector || "")) + '</span></div>' +
+          '<span class="muted" style="font-size:12px">@' + esc(u.username) + ' · ' + esc(u.role === "admin" ? "مدير النظام" : "مالك/ممثل خدمات — " + I.scopeLabel(u)) + '</span></div>' +
         '</div>') : '') +
 
       section("المظهر", "moon",
@@ -840,6 +1096,10 @@
           '<input type="password" id="pw-new" placeholder="كلمة مرور جديدة" style="flex:1;min-width:150px;height:42px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13px">' +
           '<input type="password" id="pw-new2" placeholder="تأكيد الكلمة" style="flex:1;min-width:150px;height:42px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13px">' +
           '<button class="btn" data-act="change-pw">' + ICON("refresh") + 'تحديث</button></div>') : '') +
+
+      (isAdmin() ? section("المستخدمون والصلاحيات", "users",
+        '<p class="form-hint" style="margin-bottom:10px">اعتماد الحسابات الجديدة، تغيير الأدوار والنطاق، تعيين كلمات المرور، وحذف الحسابات.</p>' +
+        '<button class="btn primary" data-act="users-manage">' + ICON("users") + 'إدارة المستخدمين</button>') : '') +
 
       section("النسخ الاحتياطي والمزامنة", "download",
         '<div style="display:flex;gap:10px;flex-wrap:wrap">' +
@@ -965,19 +1225,22 @@
 
   function showLock(errMsg) {
     hideBoot();
-    if ($("#lock")) { if (errMsg) $("#lock-err").textContent = errMsg; return; }
+    if ($("#lock")) { if (errMsg) setLockErr(errMsg); return; }
     var l = document.createElement("div"); l.className = "lock-screen"; l.id = "lock";
     l.innerHTML =
       '<div class="lock-card">' +
         '<div class="lock-logo">' + ICON("lock") + '</div>' +
         '<h1>' + esc(C.brand.title) + '</h1>' +
-        '<div class="p">' + esc(C.brand.program) + ' · هذه البيانات داخلية ومشفّرة</div>' +
+        '<div class="p">' + esc(C.brand.program) + ' · ' + esc(C.brand.year) + '</div>' +
+        '<div class="auth-note">' + ICON("key") + '<p><b>الخطوة ١ من ٢</b> — أدخل كلمة مرور الكتالوج المشتركة لفكّ التشفير، ثم سجّل الدخول بحسابك الشخصي.</p></div>' +
         '<form id="lock-form">' +
-          '<div class="lock-field"><span class="li">' + ICON("key") + '</span>' +
-            '<input type="password" id="lock-pw" placeholder="كلمة المرور" autocomplete="current-password" autofocus>' +
-            '<button type="button" class="reveal" id="lock-reveal" aria-label="إظهار">' + ICON("eye") + '</button></div>' +
+          '<div class="lock-field has-label">' +
+            '<label class="lf-label" for="lock-pw">كلمة مرور الكتالوج</label>' +
+            '<span class="li" style="top:calc(50% + 13px)">' + ICON("key") + '</span>' +
+            '<input type="password" id="lock-pw" placeholder="كلمة المرور المشتركة" autocomplete="current-password" autofocus>' +
+            '<button type="button" class="reveal" id="lock-reveal" aria-label="إظهار كلمة المرور" style="top:calc(50% + 13px)">' + ICON("eye") + '</button></div>' +
           '<label class="lock-remember"><input type="checkbox" id="lock-remember"> تذكّرني على هذا الجهاز</label>' +
-          '<div class="lock-err" id="lock-err">' + (errMsg ? esc(errMsg) : "") + '</div>' +
+          '<div class="lock-err" id="lock-err">' + (errMsg ? ICON("info") + '<span>' + esc(errMsg) + '</span>' : "") + '</div>' +
           '<button type="submit" class="btn primary block" id="lock-btn">' + ICON("unlock") + 'فتح الكتالوج</button>' +
         '</form>' +
         '<div class="lock-foot">' + ICON("info") + ' البيانات مشفّرة بمعيار AES‑256. لا يمكن قراءتها دون كلمة المرور الصحيحة.</div>' +
@@ -988,6 +1251,10 @@
       var i = $("#lock-pw"); i.type = i.type === "password" ? "text" : "password"; i.focus();
     });
     setTimeout(function () { var i = $("#lock-pw"); if (i) i.focus(); }, 50);
+  }
+  function setLockErr(msg) {
+    var e = $("#lock-err"); if (!e) return;
+    e.innerHTML = msg ? ICON("info") + '<span>' + esc(msg) + '</span>' : "";
   }
   function hideLock() { var l = $("#lock"); if (l) { l.style.transition = ".3s"; l.style.opacity = "0"; setTimeout(function () { l.remove(); }, 300); } }
 
@@ -1010,81 +1277,157 @@
 
   function renderAuthGate() {
     var g = $("#authgate"); if (!g) return;
-    if (isBootstrap()) { g.innerHTML = bootstrapMarkup(); bindBootstrap(); return; }
-    if (authView === "register") { g.innerHTML = registerMarkup(); bindRegister(); return; }
-    if (authView === "pending-notice") { g.innerHTML = noticeMarkup(); bindNotice(); return; }
-    g.innerHTML = loginMarkup(); bindLogin();
+    if (isBootstrap()) { g.innerHTML = bootstrapMarkup(); bindBootstrap(); }
+    else if (authView === "register") { g.innerHTML = registerMarkup(); bindRegister(); }
+    else if (authView === "pending-notice") { g.innerHTML = noticeMarkup(); bindNotice(); }
+    else { g.innerHTML = loginMarkup(); bindLogin(); }
+    bindAuthTabs(); bindAuthCommon();
+    var first = g.querySelector("input[autofocus]"); if (first) setTimeout(function () { first.focus(); }, 40);
   }
 
-  function authShell(icon, title, sub, body, footLink) {
-    return '<div class="lock-card">' +
+  function authShell(icon, title, sub, body, opts) {
+    opts = opts || {};
+    return '<div class="lock-card' + (opts.wide ? " wide" : "") + '">' +
       '<div class="lock-logo">' + ICON(icon) + '</div>' +
       '<h1>' + esc(title) + '</h1>' +
       '<div class="p">' + esc(sub) + '</div>' +
+      (opts.tabs ? authTabs(opts.tabs) : "") +
       body +
-      (footLink || "") +
+      (opts.foot || "") +
       '</div>';
   }
 
+  /* تبويبان واضحان بدل رابط نصي صغير أسفل البطاقة */
+  function authTabs(active) {
+    return '<div class="auth-tabs">' +
+      '<button type="button" class="auth-tab' + (active === "login" ? " on" : "") + '" data-authtab="login">' +
+        ICON("unlock") + 'تسجيل الدخول</button>' +
+      '<button type="button" class="auth-tab' + (active === "register" ? " on" : "") + '" data-authtab="register">' +
+        ICON("user") + 'حساب جديد</button>' +
+    '</div>';
+  }
+  function bindAuthTabs() {
+    $all("[data-authtab]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        authView = b.getAttribute("data-authtab"); authNotice = ""; renderAuthGate();
+      });
+    });
+  }
+
+  /* حقل موسوم — التسمية مكتوبة فوق الحقل لا داخله فقط، فتبقى ظاهرة بعد
+   * الكتابة ويقرأها قارئ الشاشة. */
+  function authField(o) {
+    var isPw = o.type === "password";
+    return '<div class="lock-field has-label">' +
+      '<label class="lf-label" for="' + o.id + '">' + esc(o.label) + (o.req ? ' <span class="req">*</span>' : '') + '</label>' +
+      '<span class="li" style="top:calc(50% + 13px)">' + ICON(o.icon) + '</span>' +
+      '<input type="' + (o.type || "text") + '" id="' + o.id + '"' +
+        (isPw ? '' : ' class="plain"') +
+        ' placeholder="' + attr(o.placeholder || "") + '"' +
+        (o.autocomplete ? ' autocomplete="' + o.autocomplete + '"' : '') +
+        (o.autofocus ? ' autofocus' : '') + '>' +
+      (isPw ? '<button type="button" class="reveal" data-reveal="' + o.id + '" aria-label="إظهار كلمة المرور" style="top:calc(50% + 13px)">' + ICON("eye") + '</button>' : '') +
+      (o.meter ? '<div class="pw-meter" id="' + o.id + '-meter"><i></i><i></i><i></i><i></i></div>' : '') +
+    '</div>';
+  }
+  function authSelect(o) {
+    return '<div class="lock-field has-label">' +
+      '<label class="lf-label" for="' + o.id + '">' + esc(o.label) + (o.req ? ' <span class="req">*</span>' : '') + '</label>' +
+      '<span class="li" style="top:calc(50% + 13px)">' + ICON(o.icon) + '</span>' +
+      '<select id="' + o.id + '"' + (o.disabled ? ' disabled' : '') + '>' + o.options + '</select>' +
+    '</div>';
+  }
+  function authStep(label) { return '<div class="auth-step"><span>' + esc(label) + '</span><i></i></div>'; }
+  function authErr() { return '<div class="lock-err" id="auth-err"></div>'; }
+  function setAuthErr(msg) {
+    var e = $("#auth-err"); if (!e) return;
+    e.innerHTML = msg ? ICON("info") + '<span>' + esc(msg) + '</span>' : "";
+  }
+
+  /* إظهار/إخفاء كلمة المرور + مؤشر قوة بسيط (الطول وتنوّع المحارف) */
+  function bindAuthCommon() {
+    $all("[data-reveal]").forEach(function (b) {
+      b.addEventListener("click", function () {
+        var i = $("#" + b.getAttribute("data-reveal"));
+        i.type = i.type === "password" ? "text" : "password"; i.focus();
+      });
+    });
+    $all(".pw-meter").forEach(function (m) {
+      var input = $("#" + m.id.replace(/-meter$/, ""));
+      if (!input) return;
+      input.addEventListener("input", function () { m.className = "pw-meter s" + pwScore(input.value); });
+    });
+  }
+  function pwScore(v) {
+    if (!v) return 0;
+    var n = 0;
+    if (v.length >= 6) n++;
+    if (v.length >= 10) n++;
+    if (/[A-Za-z]/.test(v) && /[0-9]/.test(v)) n++;
+    if (/[^A-Za-z0-9]/.test(v)) n++;
+    return Math.min(n, 4);
+  }
+
   function bootstrapMarkup() {
-    return authShell("sparkles", "إنشاء حساب مدير النظام", "لا يوجد بعد أي مستخدم — أنشئ أول حساب، وسيكون مدير النظام بصلاحية كاملة.",
+    return authShell("sparkles", "إنشاء حساب مدير النظام",
+      "لا يوجد بعد أي مستخدم — أول حساب يُنشأ هنا يصبح مدير النظام بصلاحية كاملة.",
       '<form id="auth-form">' +
-        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("user") + '</span>' +
-          '<input type="text" id="af-name" class="plain" placeholder="الاسم الكامل" autocomplete="name"></div>' +
-        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("key") + '</span>' +
-          '<input type="text" id="af-username" class="plain" placeholder="اسم المستخدم" autocomplete="username"></div>' +
-        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("lock") + '</span>' +
-          '<input type="password" id="af-pw" placeholder="كلمة المرور" autocomplete="new-password"></div>' +
-        '<div class="lock-field"><span class="li">' + ICON("lock") + '</span>' +
-          '<input type="password" id="af-pw2" placeholder="تأكيد كلمة المرور" autocomplete="new-password"></div>' +
-        '<div class="lock-err" id="auth-err"></div>' +
+        '<div class="auth-note">' + ICON("key") + '<p>احتفظ ببيانات هذا الحساب: هو الحساب الوحيد القادر على اعتماد بقية الحسابات وإدارة الصلاحيات.</p></div>' +
+        authField({ id: "af-name", label: "الاسم الكامل", icon: "user", placeholder: "الاسم كما يظهر للفريق", autocomplete: "name", req: true, autofocus: true }) +
+        authField({ id: "af-username", label: "اسم المستخدم", icon: "key", placeholder: "يُستخدم للدخول", autocomplete: "username", req: true }) +
+        '<div class="auth-grid">' +
+          authField({ id: "af-pw", label: "كلمة المرور", type: "password", icon: "lock", placeholder: "6 أحرف فأكثر", autocomplete: "new-password", req: true, meter: true }) +
+          authField({ id: "af-pw2", label: "تأكيد كلمة المرور", type: "password", icon: "lock", placeholder: "أعد كتابتها", autocomplete: "new-password", req: true }) +
+        '</div>' +
+        authErr() +
         '<button type="submit" class="btn primary block" id="auth-btn">' + ICON("check") + 'إنشاء الحساب والدخول</button>' +
       '</form>');
   }
 
   function loginMarkup() {
-    return authShell("lock", "تسجيل الدخول", "أدخل حسابك الشخصي للمتابعة إلى " + C.brand.title,
+    return authShell("lock", "مرحبًا بعودتك", "سجّل الدخول بحسابك الشخصي للمتابعة إلى " + C.brand.title,
       '<form id="auth-form">' +
-        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("user") + '</span>' +
-          '<input type="text" id="af-username" class="plain" placeholder="اسم المستخدم" autocomplete="username" autofocus></div>' +
-        '<div class="lock-field"><span class="li">' + ICON("key") + '</span>' +
-          '<input type="password" id="af-pw" placeholder="كلمة المرور" autocomplete="current-password"></div>' +
-        '<label class="lock-remember"><input type="checkbox" id="af-remember"> تذكّرني على هذا الجهاز</label>' +
-        '<div class="lock-err" id="auth-err"></div>' +
+        authField({ id: "af-username", label: "اسم المستخدم", icon: "user", placeholder: "اسم المستخدم", autocomplete: "username", req: true, autofocus: true }) +
+        authField({ id: "af-pw", label: "كلمة المرور", type: "password", icon: "lock", placeholder: "كلمة المرور", autocomplete: "current-password", req: true }) +
+        '<label class="lock-remember"><input type="checkbox" id="af-remember"> إبقائي مسجّلًا على هذا الجهاز</label>' +
+        authErr() +
         '<button type="submit" class="btn primary block" id="auth-btn">' + ICON("unlock") + 'دخول</button>' +
       '</form>',
-      '<div class="lock-foot">ليس لديك حساب؟ <a href="#" id="auth-to-register" style="color:var(--accent);font-weight:700">سجّل الآن</a></div>');
+      { tabs: "login" });
   }
 
   function registerMarkup() {
     var sectors = uniqueSectors();
-    return authShell("users", "طلب إنشاء حساب", "اختر قطاعك ثم إدارتك العامة — سترى وتُدير خدمات إدارتك فقط بعد موافقة مدير النظام.",
+    return authShell("users", "إنشاء حساب جديد",
+      "اختر قطاعك ثم إدارتك العامة — سترى وتُدير خدمات إدارتك فقط.",
       '<form id="auth-form">' +
-        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("user") + '</span>' +
-          '<input type="text" id="af-name" class="plain" placeholder="الاسم الكامل" autocomplete="name"></div>' +
-        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("key") + '</span>' +
-          '<input type="text" id="af-username" class="plain" placeholder="اسم المستخدم" autocomplete="username"></div>' +
-        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("layers") + '</span>' +
-          '<select id="af-sector">' +
-            '<option value="">اختر القطاع…</option>' +
-            sectors.map(function (s) { return '<option value="' + attr(s) + '">' + esc(s) + '</option>'; }).join("") +
-          '</select></div>' +
-        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("building") + '</span>' +
-          '<select id="af-department" disabled>' +
-            '<option value="">اختر القطاع أولًا…</option>' +
-          '</select></div>' +
-        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("lock") + '</span>' +
-          '<input type="password" id="af-pw" placeholder="كلمة المرور" autocomplete="new-password"></div>' +
-        '<div class="lock-field"><span class="li">' + ICON("lock") + '</span>' +
-          '<input type="password" id="af-pw2" placeholder="تأكيد كلمة المرور" autocomplete="new-password"></div>' +
-        '<div class="lock-err" id="auth-err"></div>' +
-        '<button type="submit" class="btn primary block" id="auth-btn">' + ICON("check") + 'إرسال الطلب</button>' +
+        authStep("بيانات الحساب") +
+        authField({ id: "af-name", label: "الاسم الكامل", icon: "user", placeholder: "الاسم كما يظهر للفريق", autocomplete: "name", req: true, autofocus: true }) +
+        authField({ id: "af-username", label: "اسم المستخدم", icon: "key", placeholder: "يُستخدم للدخول", autocomplete: "username", req: true }) +
+
+        authStep("نطاق العمل") +
+        authSelect({ id: "af-sector", label: "القطاع", icon: "layers", req: true,
+          options: '<option value="">اختر القطاع…</option>' +
+            sectors.map(function (x) { return '<option value="' + attr(x) + '">' + esc(x) + '</option>'; }).join("") }) +
+        authSelect({ id: "af-department", label: "الإدارة العامة", icon: "building", req: true, disabled: true,
+          options: '<option value="">اختر القطاع أولًا…</option>' }) +
+
+        authStep("كلمة المرور") +
+        '<div class="auth-grid">' +
+          authField({ id: "af-pw", label: "كلمة المرور", type: "password", icon: "lock", placeholder: "6 أحرف فأكثر", autocomplete: "new-password", req: true, meter: true }) +
+          authField({ id: "af-pw2", label: "تأكيد كلمة المرور", type: "password", icon: "lock", placeholder: "أعد كتابتها", autocomplete: "new-password", req: true }) +
+        '</div>' +
+
+        '<div class="auth-note">' + ICON("info") + '<p>ستُنشأ بصلاحية <b>مالك/ممثل خدمات</b>: تستعرض وتعدّل خدمات إدارتك فقط. الحساب <b>يحتاج موافقة مدير النظام</b> قبل أول دخول.</p></div>' +
+        authErr() +
+        '<button type="submit" class="btn primary block" id="auth-btn">' + ICON("check") + 'إرسال طلب الحساب</button>' +
       '</form>',
-      '<div class="lock-foot">لديك حساب بالفعل؟ <a href="#" id="auth-to-login" style="color:var(--accent);font-weight:700">تسجيل الدخول</a></div>');
+      { tabs: "register", wide: true });
   }
 
   function noticeMarkup() {
     return authShell("info", "بانتظار الموافقة", authNotice || "تم إرسال طلبك بنجاح — بانتظار موافقة مدير النظام.",
+      '<div class="auth-note">' + ICON("users") + '<p>سيصل الطلب إلى <b>مدير النظام</b> في لوحة «إدارة المستخدمين». بعد الاعتماد ستتمكن من الدخول مباشرة بنفس بيانات حسابك.</p></div>' +
       '<button type="button" class="btn ghost block" id="auth-back">' + ICON("arrowRight") + 'رجوع لتسجيل الدخول</button>');
   }
 
@@ -1093,10 +1436,9 @@
       e.preventDefault();
       var name = $("#af-name").value.trim(), username = $("#af-username").value.trim();
       var pw = $("#af-pw").value, pw2 = $("#af-pw2").value;
-      var err = $("#auth-err");
-      if (!name || !username) { err.textContent = "الاسم واسم المستخدم مطلوبان"; return; }
-      if (pw.length < 6) { err.textContent = "كلمة المرور 6 أحرف على الأقل"; return; }
-      if (pw !== pw2) { err.textContent = "كلمتا المرور غير متطابقتين"; return; }
+      if (!name || !username) { setAuthErr("الاسم واسم المستخدم مطلوبان"); return; }
+      if (pw.length < 6) { setAuthErr("كلمة المرور 6 أحرف على الأقل"); return; }
+      if (pw !== pw2) { setAuthErr("كلمتا المرور غير متطابقتين"); return; }
       var btn = $("#auth-btn"); btn.disabled = true;
       Box.hashPassword(pw).then(function (h) {
         var u = { id: 1, name: name, username: username, usernameLower: username.toLowerCase(), salt: h.salt, hash: h.hash, role: "admin", sector: null, status: "approved", createdAt: I.todayISO() };
@@ -1104,7 +1446,7 @@
         S.currentUser = sessionUser(u);
         localStorage.setItem("cat_user", String(u.id));
         commitChange("إنشاء حساب مدير النظام: " + name, function () { hideAuthGate(); render(); }, "تم إنشاء حساب المدير");
-      }).catch(function () { btn.disabled = false; err.textContent = "تعذّر إنشاء الحساب"; });
+      }).catch(function () { btn.disabled = false; setAuthErr("تعذّر إنشاء الحساب"); });
     });
   }
 
@@ -1113,14 +1455,13 @@
       e.preventDefault();
       var username = $("#af-username").value.trim(), pw = $("#af-pw").value;
       var remember = $("#af-remember").checked;
-      var err = $("#auth-err");
-      if (!username || !pw) { err.textContent = "أدخل اسم المستخدم وكلمة المرور"; return; }
+      if (!username || !pw) { setAuthErr("أدخل اسم المستخدم وكلمة المرور"); return; }
       var u = users().filter(function (x) { return (x.usernameLower || x.username.toLowerCase()) === username.toLowerCase(); })[0];
-      if (!u) { err.textContent = "اسم المستخدم أو كلمة المرور غير صحيحة"; return; }
+      if (!u) { setAuthErr("اسم المستخدم أو كلمة المرور غير صحيحة"); return; }
       var btn = $("#auth-btn"); btn.disabled = true;
       Box.verifyPassword(pw, u.salt, u.hash).then(function (ok) {
         btn.disabled = false;
-        if (!ok) { err.textContent = "اسم المستخدم أو كلمة المرور غير صحيحة"; return; }
+        if (!ok) { setAuthErr("اسم المستخدم أو كلمة المرور غير صحيحة"); return; }
         if (u.status === "pending") { authNotice = "حسابك لا يزال بانتظار موافقة مدير النظام."; authView = "pending-notice"; renderAuthGate(); return; }
         if (u.status === "rejected") { authNotice = "تم رفض هذا الحساب. تواصل مع مدير النظام."; authView = "pending-notice"; renderAuthGate(); return; }
         S.currentUser = sessionUser(u);
@@ -1128,7 +1469,6 @@
         hideAuthGate(); render();
       });
     });
-    $("#auth-to-register").addEventListener("click", function (e) { e.preventDefault(); authView = "register"; renderAuthGate(); });
   }
 
   function bindRegister() {
@@ -1146,14 +1486,13 @@
       var name = $("#af-name").value.trim(), username = $("#af-username").value.trim();
       var sector = secSel.value, department = depSel.value;
       var pw = $("#af-pw").value, pw2 = $("#af-pw2").value;
-      var err = $("#auth-err");
-      if (!name || !username) { err.textContent = "الاسم واسم المستخدم مطلوبان"; return; }
-      if (!sector) { err.textContent = "اختر القطاع"; return; }
-      if (!department) { err.textContent = "اختر الإدارة العامة"; return; }
-      if (pw.length < 6) { err.textContent = "كلمة المرور 6 أحرف على الأقل"; return; }
-      if (pw !== pw2) { err.textContent = "كلمتا المرور غير متطابقتين"; return; }
+      if (!name || !username) { setAuthErr("الاسم واسم المستخدم مطلوبان"); return; }
+      if (!sector) { setAuthErr("اختر القطاع"); return; }
+      if (!department) { setAuthErr("اختر الإدارة العامة"); return; }
+      if (pw.length < 6) { setAuthErr("كلمة المرور 6 أحرف على الأقل"); return; }
+      if (pw !== pw2) { setAuthErr("كلمتا المرور غير متطابقتين"); return; }
       if (users().some(function (x) { return (x.usernameLower || x.username.toLowerCase()) === username.toLowerCase(); })) {
-        err.textContent = "اسم المستخدم مستخدَم بالفعل"; return;
+        setAuthErr("اسم المستخدم مستخدَم بالفعل"); return;
       }
       var btn = $("#auth-btn"); btn.disabled = true;
       Box.hashPassword(pw).then(function (h) {
@@ -1164,9 +1503,8 @@
           authNotice = "تم إرسال طلبك بنجاح. سيتمكن مدير النظام من مراجعته والموافقة عليه، وبعدها يمكنك تسجيل الدخول ورؤية خدمات إدارتك.";
           authView = "pending-notice"; renderAuthGate();
         }, "تم إرسال الطلب");
-      }).catch(function () { btn.disabled = false; err.textContent = "تعذّر إرسال الطلب"; });
+      }).catch(function () { btn.disabled = false; setAuthErr("تعذّر إرسال الطلب"); });
     });
-    $("#auth-to-login").addEventListener("click", function (e) { e.preventDefault(); authView = "login"; renderAuthGate(); });
   }
 
   /* الإدارات العامة المسجَّلة تحت قطاع معيّن — تُقرأ من allServices() لأن شاشة
@@ -1194,7 +1532,7 @@
       afterCatalogUnlocked();
     }).catch(function () {
       btn.disabled = false; btn.innerHTML = ICON("unlock") + "فتح الكتالوج";
-      $("#lock-err").textContent = "كلمة المرور غير صحيحة";
+      setLockErr("كلمة المرور غير صحيحة");
       var i = $("#lock-pw"); i.value = ""; i.focus();
     });
   }
