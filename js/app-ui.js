@@ -60,9 +60,14 @@
       case "manage-edit-cancel": manageEditing = null; renderManageList(); break;
       case "manage-delete": manageDelete(t.getAttribute("data-value")); break;
       case "review": openReview(); break;
-      case "review-tab": reviewTab = t.getAttribute("data-tab"); renderReviewList(); break;
+      /* renderReview() not renderReviewList() — the tab strip itself carries the
+       * active highlight and the counts, so both must repaint on a tab switch */
+      case "review-tab": reviewTab = t.getAttribute("data-tab"); renderReview(); break;
       case "review-approve": reviewApprove(+value); break;
       case "review-reject": reviewReject(+value); break;
+      case "analysis-approve": analysisApprove(+value); break;
+      case "analysis-reject": analysisReject(+value); break;
+      case "analysis-open": closeModal(); I.openService(+value); break;
       case "rv-toggle": t.nextElementSibling.classList.toggle("hidden"); break;
       case "user-approve": userApprove(+value); break;
       case "user-reject": userReject(+value); break;
@@ -92,6 +97,7 @@
     else if (el.id === "import-file") handleImportFile(el.files[0]);
     else if (el.getAttribute && el.getAttribute("data-act") === "user-role") userSetRole(+el.getAttribute("data-value"), el.value);
     else if (el.getAttribute && el.getAttribute("data-act") === "user-sector") userSetSector(+el.getAttribute("data-value"), el.value);
+    else if (el.getAttribute && el.getAttribute("data-act") === "user-department") userSetDepartment(+el.getAttribute("data-value"), el.value);
   });
 
   /* ---------------- Filters ---------------- */
@@ -156,11 +162,19 @@
     s = s || {};
     var sectors = uniqueSectors();
     var cats = uniq(C.taxonomy.categories.concat(allValues("category"))).filter(Boolean);
+    /* حساب مقيّد بإدارة (غير مدير النظام) — قطاعه وإدارته مفروضان من حسابه */
+    var scoped = !isAdmin() && S.currentUser && S.currentUser.department;
 
     function dl(idn, values) { return '<datalist id="' + idn + '">' + uniq(values).filter(Boolean).map(function (v) { return '<option value="' + attr(v) + '">'; }).join("") + '</datalist>'; }
     function inp(name, label, val, list, req) {
       return '<div class="form-row"><label>' + esc(label) + (req ? ' <span class="req">*</span>' : '') + '</label>' +
         '<input type="text" name="' + name + '" value="' + attr(val || "") + '"' + (list ? ' list="' + list + '" autocomplete="off"' : '') + '></div>';
+    }
+    /* حقل مقفل: صاحب الإدارة لا يغيّر قطاعه أو إدارته — القيمة تُفرض من حسابه */
+    function lockedInp(name, label, val, hint) {
+      return '<div class="form-row"><label>' + esc(label) + '</label>' +
+        '<input type="text" name="' + name + '" value="' + attr(val || "") + '" readonly class="locked">' +
+        '<span class="row-hint">' + ICON("lock") + esc(hint || "") + '</span></div>';
     }
     function ta(name, label, val, full, tall) {
       return '<div class="form-row ' + (full ? "full" : "") + '"><label>' + esc(label) + '</label><textarea name="' + name + '" class="' + (tall ? "tall" : "") + '">' + esc(val || "") + '</textarea></div>';
@@ -189,8 +203,11 @@
       dl("dl-sector", sectors) + dl("dl-department", allValues("department")) + dl("dl-unit", allValues("unit")) + dl("dl-owner", uniq(services().map(function (x) { return x.owner; }))) + dl("dl-rep", uniq(services().map(function (x) { return x.representative; }))) +
       formSection("المعلومات الأساسية", "doc",
         inp("title", "عنوان الخدمة", s.title, null, true) +
-        inp("sector", "القطاع", s.sector, "dl-sector", true) +
-        inp("department", "الإدارة العامة", s.department, "dl-department") +
+        (scoped
+          ? lockedInp("sector", "القطاع", S.currentUser.sector, "محدَّد من حسابك") +
+            lockedInp("department", "الإدارة العامة", S.currentUser.department, "خدماتك تُسجَّل تحت إدارتك")
+          : inp("sector", "القطاع", s.sector, "dl-sector", true) +
+            inp("department", "الإدارة العامة", s.department, "dl-department")) +
         inp("unit", "الإدارة", s.unit, "dl-unit")
       ) +
       formSection("الفريق المسؤول", "users",
@@ -202,13 +219,19 @@
         sel("category", "الفئة", cats, s.category, true) +
         inp("sla", "الخط الزمني (SLA)", s.sla)
       ) +
-      formSection("حالة الإتاحة", "power",
-        sel("status", "الحالة", C.serviceStatuses.map(function (x) { return x.key; }), C.normalizeStatus(s.status), false) +
-        inp("statusNote", "سبب الإيقاف / ملاحظة على الحالة", s.statusNote) +
-        '<div class="form-row full"><span class="muted" style="font-size:11.5px;line-height:1.7">' +
-          C.serviceStatuses.map(function (x) { return '<b style="color:' + (I.isDark() ? x.colorDark : x.color) + '">' + esc(x.label) + '</b>: ' + esc(x.desc); }).join(" · ") +
-        '</span></div>'
-      ) +
+      (scoped && !isEdit
+        ? formSection("حالة الإتاحة", "power",
+            '<div class="form-row full"><div class="status-notice" style="--c:' + I.statusColor(C.newServiceStatus) + ';margin:0">' +
+              ICON("analysis") + '<div><b>ستُسجَّل بحالة «' + esc(C.newServiceStatus) + '»</b>' +
+              '<span>تدخل الخدمة الكتالوج فورًا موسومة بأنها قيد التحليل، ويعتمدها مدير النظام لاحقًا بعد مراجعتها.</span></div></div></div>'
+          )
+        : formSection("حالة الإتاحة", "power",
+            sel("status", "الحالة", C.serviceStatuses.map(function (x) { return x.key; }), C.normalizeStatus(s.status), false) +
+            inp("statusNote", "سبب الإيقاف / ملاحظة على الحالة", s.statusNote) +
+            '<div class="form-row full"><span class="muted" style="font-size:11.5px;line-height:1.7">' +
+              C.serviceStatuses.map(function (x) { return '<b style="color:' + (I.isDark() ? x.colorDark : x.color) + '">' + esc(x.label) + '</b>: ' + esc(x.desc); }).join(" · ") +
+            '</span></div>'
+          )) +
       formSection("الارتباط الاستراتيجي", "target",
         chkGroup("objectives", "الأهداف الاستراتيجية", objOptions, s.objectives) +
         chkGroup("beneficiaries", "المستفيدون", benOptions, s.beneficiaries)
@@ -281,23 +304,42 @@
       outputs: val("outputs"), stageRationale: val("stageRationale"),
       updatedAt: I.todayISO()
     };
-    /* an owner/representative can only ever submit for their own sector —
-     * override whatever the free-text sector field says, don't trust it */
-    if (!isAdmin() && S.currentUser) rec.sector = S.currentUser.sector;
+    /* an owner/representative can only ever act inside their own إدارة —
+     * override whatever the free-text fields say, don't trust them */
+    if (!isAdmin() && S.currentUser) {
+      if (S.currentUser.sector) rec.sector = S.currentUser.sector;
+      if (S.currentUser.department) rec.department = S.currentUser.department;
+    }
 
     var list = S.catalog.services;
+    function nextId() { return list.reduce(function (mx, x) { return Math.max(mx, x.id || 0); }, 0) + 1; }
+
     if (isAdmin()) {
       if (id) {
         for (var i = 0; i < list.length; i++) if (list[i].id === id) { rec.id = id; list[i] = Object.assign({}, list[i], rec); break; }
       } else {
-        rec.id = list.reduce(function (mx, x) { return Math.max(mx, x.id || 0); }, 0) + 1;
+        rec.id = nextId();
         list.unshift(rec);
       }
       closeModal();
       commitChange(id ? "تعديل خدمة: " + title : "إضافة خدمة: " + title, render, id ? "تم حفظ التعديلات" : "تمت إضافة الخدمة");
+    } else if (!id) {
+      /* خدمة جديدة يقترحها صاحب إدارة: تدخل الكتالوج فورًا لكن بحالة
+       * «جاري التحليل» — يراها صاحبها ومدير النظام، ولا تُعدّ خدمة معتمدة حتى
+       * يحللها المدير ويغيّر حالتها. هذا هو طابور اعتماد الخدمات الجديدة،
+       * بخلاف التعديل/الحذف على خدمة قائمة الذي يبقى عبر طلبات المراجعة. */
+      rec.status = C.newServiceStatus;
+      rec.statusNote = rec.statusNote || ("مقترحة من " + S.currentUser.name + " — بانتظار التحليل والاعتماد");
+      rec.submittedByName = S.currentUser.name;
+      rec.submittedAt = I.todayISO();
+      rec.id = nextId();
+      list.unshift(rec);
+      closeModal();
+      commitChange("إضافة خدمة (جاري التحليل): " + title, render,
+        "تمت إضافة الخدمة بحالة «جاري التحليل» — سيراجعها مدير النظام ويعتمدها");
     } else {
-      var before = id ? list.filter(function (x) { return x.id === id; })[0] : null;
-      submitPendingEdit(id ? "edit" : "add", id || null, before || null, rec, title);
+      var before = list.filter(function (x) { return x.id === id; })[0];
+      submitPendingEdit("edit", id, before || null, rec, title);
       closeModal();
     }
   }
@@ -325,7 +367,7 @@
     var rec = {
       id: pendingEdits().reduce(function (m, x) { return Math.max(m, x.id || 0); }, 0) + 1,
       action: action, serviceId: serviceId, before: before, after: after,
-      titleSnapshot: titleForMsg, sector: u.sector,
+      titleSnapshot: titleForMsg, sector: u.sector, department: u.department || null,
       submittedBy: u.id, submittedByName: u.name,
       submittedAt: I.todayISO(), status: "pending", reviewNote: null, reviewedBy: null, reviewedAt: null
     };
@@ -407,6 +449,7 @@
     shell.innerHTML =
       '<div class="seg-row">' +
         '<button class="seg' + (reviewTab === "edits" ? " on" : "") + '" data-act="review-tab" data-tab="edits">' + ICON("edit") + '<span>طلبات التعديل</span><b>' + editCount + '</b></button>' +
+        '<button class="seg' + (reviewTab === "analysis" ? " on" : "") + '" data-act="review-tab" data-tab="analysis">' + ICON("analysis") + '<span>خدمات للتحليل</span><b>' + I.analysisServices().length + '</b></button>' +
         '<button class="seg' + (reviewTab === "users" ? " on" : "") + '" data-act="review-tab" data-tab="users">' + ICON("users") + '<span>طلبات الحسابات</span><b>' + userCount + '</b></button>' +
       '</div><div id="review-list"></div>';
     renderReviewList();
@@ -422,6 +465,10 @@
     if (reviewTab === "edits") {
       var items = pendingEdits().slice().sort(function (a, b) { return b.id - a.id; });
       list.innerHTML = items.length ? items.map(editRowHTML).join("") : reviewEmpty("لا توجد طلبات تعديل بعد.");
+    } else if (reviewTab === "analysis") {
+      var pend = I.analysisServices().slice().sort(function (a, b) { return b.id - a.id; });
+      list.innerHTML = pend.length ? pend.map(analysisRowHTML).join("")
+        : reviewEmpty("لا توجد خدمات جديدة بانتظار التحليل.");
     } else {
       var us = users().slice().sort(function (a, b) {
         var order = { pending: 0, approved: 1, rejected: 2 };
@@ -442,13 +489,64 @@
     return '<div class="rv-card">' +
       '<div class="rv-head"><span class="badge plain">' + esc(actionLabel[e.action]) + '</span>' +
       '<b class="rv-title">' + esc(e.titleSnapshot) + '</b>' + statusBadge(e.status) + '</div>' +
-      '<div class="rv-meta">' + ICON("user") + esc(e.submittedByName) + ' · ' + ICON("layers") + esc(e.sector) + ' · ' + esc(I.fmtDate(e.submittedAt)) + '</div>' +
+      '<div class="rv-meta">' + ICON("user") + esc(e.submittedByName) + ' · ' + ICON("building") + esc(e.department || e.sector || "—") + ' · ' + esc(I.fmtDate(e.submittedAt)) + '</div>' +
       (detail ? '<button type="button" class="rv-toggle" data-act="rv-toggle">' + ICON("chevronDown") + 'عرض التفاصيل</button><div class="rv-detail hidden">' + detail + '</div>' : "") +
       (e.status === "pending" ? '<div class="rv-acts"><button class="btn primary sm" data-act="review-approve" data-value="' + e.id + '">' + ICON("check") + 'قبول وتطبيق</button>' +
         '<button class="btn danger sm" data-act="review-reject" data-value="' + e.id + '">' + ICON("close") + 'رفض</button></div>' :
         '<div class="rv-meta">' + ICON("check") + 'راجعه ' + esc(e.reviewedBy || "") + ' · ' + esc(I.fmtDate(e.reviewedAt)) + '</div>') +
       '</div>';
   }
+  /* ---- خدمات جديدة أضافها أصحاب الإدارات وتنتظر تحليل مدير النظام ----
+   * هذه ليست طلبات معلّقة: الخدمة موجودة فعلًا في الكتالوج بحالة «جاري
+   * التحليل»، والاعتماد هنا يعني نقلها إلى «مفعلة». */
+  function analysisRowHTML(s) {
+    var rows = [
+      ["القطاع", s.sector], ["الإدارة العامة", s.department], ["الإدارة", s.unit],
+      ["مالك الخدمة", s.owner], ["ممثل الخدمة", s.representative],
+      ["المرحلة", s.stage], ["الفئة", s.category], ["الخط الزمني (SLA)", s.sla],
+      ["وصف الخدمة", s.description], ["الأهداف المرجوّة", s.goals],
+      ["المتطلبات الأولية", s.prerequisites], ["المخرجات المتوقّعة", s.outputs],
+      ["الأهداف الاستراتيجية", (s.objectives || []).join("، ")],
+      ["المستفيدون", (s.beneficiaries || []).join("، ")]
+    ].filter(function (r) { return r[1]; });
+    var detail = rows.map(function (r) {
+      return '<div class="diff-row"><b>' + esc(r[0]) + '</b><span class="diff-after">' + esc(r[1]) + '</span></div>';
+    }).join("");
+    return '<div class="rv-card">' +
+      '<div class="rv-head">' + I.statusBadgeHTML(C.newServiceStatus) +
+        '<b class="rv-title">' + esc(s.title) + '</b></div>' +
+      '<div class="rv-meta">' + ICON("user") + esc(s.submittedByName || s.owner || "—") + ' · ' +
+        ICON("building") + esc(s.department || s.sector || "—") + ' · ' + esc(I.fmtDate(s.submittedAt || s.updatedAt)) + '</div>' +
+      (detail ? '<button type="button" class="rv-toggle" data-act="rv-toggle">' + ICON("chevronDown") + 'عرض تفاصيل الخدمة</button><div class="rv-detail hidden">' + detail + '</div>' : "") +
+      '<div class="rv-acts">' +
+        '<button class="btn primary sm" data-act="analysis-approve" data-value="' + s.id + '">' + ICON("check") + 'اعتماد وتفعيل</button>' +
+        '<button class="btn sm" data-act="analysis-open" data-value="' + s.id + '">' + ICON("edit") + 'فتح وتعديل</button>' +
+        '<button class="btn danger sm" data-act="analysis-reject" data-value="' + s.id + '">' + ICON("close") + 'رفض</button>' +
+      '</div></div>';
+  }
+  function analysisApprove(sid) {
+    var s = allServices().filter(function (x) { return x.id === sid; })[0]; if (!s) return;
+    s.status = "مفعلة";
+    /* الملاحظة كانت آلية («مقترحة من فلان…») فلا معنى لبقائها بعد الاعتماد */
+    s.statusNote = "";
+    s.updatedAt = I.todayISO();
+    commitChange("اعتماد خدمة جديدة: " + s.title, function () { renderReview(); render(); }, "تم اعتماد الخدمة وتفعيلها");
+  }
+  function analysisReject(sid) {
+    var s = allServices().filter(function (x) { return x.id === sid; })[0]; if (!s) return;
+    confirmDialog({
+      title: "رفض الخدمة المقترحة",
+      message: 'رفض «' + s.title + '»؟ ستُنقل إلى حالة «متوقفة» ولن تُحذف — يمكنك حذفها نهائيًا لاحقًا من بطاقتها.',
+      confirm: "رفض", danger: true
+    }).then(function (ok) {
+      if (!ok) return;
+      s.status = "متوقفة";
+      s.statusNote = "رُفضت بعد التحليل من " + S.currentUser.name;
+      s.updatedAt = I.todayISO();
+      commitChange("رفض خدمة مقترحة: " + s.title, function () { renderReview(); render(); }, "تم رفض الخدمة");
+    });
+  }
+
   function reviewApprove(editId) {
     var e = pendingEdits().filter(function (x) { return x.id === editId; })[0]; if (!e || e.status !== "pending") return;
     var list = S.catalog.services;
@@ -477,16 +575,24 @@
       '<option value="owner_rep"' + (u.role === "owner_rep" ? " selected" : "") + '>مالك/ممثل خدمات</option>' +
       '<option value="admin"' + (u.role === "admin" ? " selected" : "") + '>مدير النظام</option>' +
       '</select>';
-    var sectorSel = u.role === "admin" ? "" : '<select class="mini-select" data-act="user-sector" data-value="' + u.id + '">' +
-      '<option value="">اختر القطاع…</option>' +
-      uniqueSectors().map(function (s) { return '<option value="' + attr(s) + '"' + (u.sector === s ? " selected" : "") + '>' + esc(s) + '</option>'; }).join("") +
-      '</select>';
+    var sectorSel = "", deptSel = "";
+    if (u.role !== "admin") {
+      sectorSel = '<select class="mini-select" data-act="user-sector" data-value="' + u.id + '">' +
+        '<option value="">اختر القطاع…</option>' +
+        uniqueSectors().map(function (s) { return '<option value="' + attr(s) + '"' + (u.sector === s ? " selected" : "") + '>' + esc(s) + '</option>'; }).join("") +
+        '</select>';
+      var deps = departmentsOfSector(u.sector);
+      deptSel = '<select class="mini-select" data-act="user-department" data-value="' + u.id + '"' + (u.sector ? "" : " disabled") + '>' +
+        '<option value="">' + (u.sector ? "اختر الإدارة العامة…" : "اختر القطاع أولًا…") + '</option>' +
+        deps.map(function (d) { return '<option value="' + attr(d) + '"' + (u.department === d ? " selected" : "") + '>' + esc(d) + '</option>'; }).join("") +
+        '</select>';
+    }
     var actions;
     if (u.status === "pending") {
       actions = '<button class="btn primary sm" data-act="user-approve" data-value="' + u.id + '">' + ICON("check") + 'قبول</button>' +
         '<button class="btn danger sm" data-act="user-reject" data-value="' + u.id + '">' + ICON("close") + 'رفض</button>';
     } else if (u.status === "approved") {
-      actions = (u.role === "owner_rep" && u.sector ? '<button class="btn sm" data-act="user-assign" data-value="' + u.id + '">' + ICON("briefcase") + 'تعيين لخدمات</button>' : "") +
+      actions = (u.role === "owner_rep" && (u.department || u.sector) ? '<button class="btn sm" data-act="user-assign" data-value="' + u.id + '">' + ICON("briefcase") + 'تعيين لخدمات</button>' : "") +
         '<button class="btn danger sm" data-act="user-deactivate" data-value="' + u.id + '">' + ICON("lock") + 'تعطيل</button>';
     } else {
       actions = '<button class="btn primary sm" data-act="user-reactivate" data-value="' + u.id + '">' + ICON("check") + 'إعادة تفعيل</button>';
@@ -494,13 +600,14 @@
     return '<div class="rv-card">' +
       '<div class="rv-head"><span class="avatar" style="width:28px;height:28px;font-size:10px;flex:none;background:' + I.avatarColor(u.name) + '">' + esc(I.initials(u.name)) + '</span>' +
       '<b class="rv-title">' + esc(u.name) + '</b><span class="muted" style="font-size:11px;white-space:nowrap">@' + esc(u.username) + '</span>' + statusBadge(u.status) + '</div>' +
-      '<div class="rv-acts" style="margin-top:10px">' + roleSel + sectorSel + '</div>' +
+      '<div class="rv-acts" style="margin-top:10px">' + roleSel + sectorSel + deptSel + '</div>' +
       '<div class="rv-acts">' + actions + '</div>' +
       '</div>';
   }
   function userApprove(uid) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
     if (u.role === "owner_rep" && !u.sector) { toast("حدّد القطاع أولًا", "err"); return; }
+    if (u.role === "owner_rep" && !u.department) { toast("حدّد الإدارة العامة أولًا", "err", "نطاق الحساب يُحدَّد بالإدارة — بدونها لن يرى أي خدمة"); return; }
     u.status = "approved";
     commitChange("قبول حساب: " + u.name, renderReviewList, "تم القبول");
   }
@@ -535,13 +642,20 @@
       var otherActiveAdmins = users().filter(function (x) { return x.role === "admin" && x.status === "approved" && x.id !== uid; }).length;
       if (otherActiveAdmins === 0) { toast("لا يمكن التغيير", "err", "هذا آخر حساب مدير نظام نشط"); renderReviewList(); return; }
     }
-    u.role = role; if (role === "admin") u.sector = null;
+    u.role = role; if (role === "admin") { u.sector = null; u.department = null; }
     commitChange("تغيير دور مستخدم: " + u.name, renderReviewList, "تم التحديث");
   }
   function userSetSector(uid, sector) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
     u.sector = sector || null;
+    /* الإدارة تابعة للقطاع — تغيير القطاع يُبطل إدارة لم تعد تنتمي إليه */
+    if (!u.sector || departmentsOfSector(u.sector).indexOf(u.department) < 0) u.department = null;
     commitChange("تغيير قطاع مستخدم: " + u.name, renderReviewList, "تم التحديث");
+  }
+  function userSetDepartment(uid, department) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
+    u.department = department || null;
+    commitChange("تغيير إدارة مستخدم: " + u.name, renderReviewList, "تم التحديث");
   }
 
   /* ---- Link an approved user to specific services as owner/representative
@@ -549,8 +663,10 @@
    * an admin action, applied immediately, no approval queue involved). ---- */
   function assignRowsHTML(uid) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return "";
-    var svcs = allServices().filter(function (s) { return s.sector === u.sector; });
-    if (!svcs.length) return reviewEmpty("لا توجد خدمات في هذا القطاع بعد.");
+    var svcs = allServices().filter(function (s) {
+      return u.department ? s.department === u.department : s.sector === u.sector;
+    });
+    if (!svcs.length) return reviewEmpty("لا توجد خدمات في هذه الإدارة بعد.");
     return svcs.map(function (s) {
       var isOwner = s.owner === u.name, isRep = s.representative === u.name;
       return '<div class="mrow"><div class="mtxt"><b>' + esc(s.title) + '</b></div>' +
@@ -942,7 +1058,7 @@
 
   function registerMarkup() {
     var sectors = uniqueSectors();
-    return authShell("users", "طلب إنشاء حساب", "سجّل بيانات مالك/ممثل الخدمة — يحتاج طلبك موافقة مدير النظام قبل الدخول.",
+    return authShell("users", "طلب إنشاء حساب", "اختر قطاعك ثم إدارتك العامة — سترى وتُدير خدمات إدارتك فقط بعد موافقة مدير النظام.",
       '<form id="auth-form">' +
         '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("user") + '</span>' +
           '<input type="text" id="af-name" class="plain" placeholder="الاسم الكامل" autocomplete="name"></div>' +
@@ -952,6 +1068,10 @@
           '<select id="af-sector">' +
             '<option value="">اختر القطاع…</option>' +
             sectors.map(function (s) { return '<option value="' + attr(s) + '">' + esc(s) + '</option>'; }).join("") +
+          '</select></div>' +
+        '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("building") + '</span>' +
+          '<select id="af-department" disabled>' +
+            '<option value="">اختر القطاع أولًا…</option>' +
           '</select></div>' +
         '<div class="lock-field" style="margin-bottom:10px"><span class="li">' + ICON("lock") + '</span>' +
           '<input type="password" id="af-pw" placeholder="كلمة المرور" autocomplete="new-password"></div>' +
@@ -981,7 +1101,7 @@
       Box.hashPassword(pw).then(function (h) {
         var u = { id: 1, name: name, username: username, usernameLower: username.toLowerCase(), salt: h.salt, hash: h.hash, role: "admin", sector: null, status: "approved", createdAt: I.todayISO() };
         users().push(u);
-        S.currentUser = { id: u.id, name: u.name, username: u.username, role: u.role, sector: u.sector };
+        S.currentUser = sessionUser(u);
         localStorage.setItem("cat_user", String(u.id));
         commitChange("إنشاء حساب مدير النظام: " + name, function () { hideAuthGate(); render(); }, "تم إنشاء حساب المدير");
       }).catch(function () { btn.disabled = false; err.textContent = "تعذّر إنشاء الحساب"; });
@@ -1003,7 +1123,7 @@
         if (!ok) { err.textContent = "اسم المستخدم أو كلمة المرور غير صحيحة"; return; }
         if (u.status === "pending") { authNotice = "حسابك لا يزال بانتظار موافقة مدير النظام."; authView = "pending-notice"; renderAuthGate(); return; }
         if (u.status === "rejected") { authNotice = "تم رفض هذا الحساب. تواصل مع مدير النظام."; authView = "pending-notice"; renderAuthGate(); return; }
-        S.currentUser = { id: u.id, name: u.name, username: u.username, role: u.role, sector: u.sector };
+        S.currentUser = sessionUser(u);
         if (remember) localStorage.setItem("cat_user", String(u.id)); else sessionStorage.setItem("cat_user", String(u.id));
         hideAuthGate(); render();
       });
@@ -1012,14 +1132,24 @@
   }
 
   function bindRegister() {
+    /* الإدارات تتبع القطاع المختار — لا تُسرد كل إدارات الهيئة دفعةً واحدة */
+    var secSel = $("#af-sector"), depSel = $("#af-department");
+    secSel.addEventListener("change", function () {
+      var deps = departmentsOfSector(secSel.value);
+      depSel.disabled = !deps.length;
+      depSel.innerHTML = '<option value="">' + (secSel.value ? (deps.length ? "اختر الإدارة العامة…" : "لا توجد إدارات في هذا القطاع") : "اختر القطاع أولًا…") + '</option>' +
+        deps.map(function (d) { return '<option value="' + attr(d) + '">' + esc(d) + '</option>'; }).join("");
+    });
+
     $("#auth-form").addEventListener("submit", function (e) {
       e.preventDefault();
       var name = $("#af-name").value.trim(), username = $("#af-username").value.trim();
-      var sector = $("#af-sector").value;
+      var sector = secSel.value, department = depSel.value;
       var pw = $("#af-pw").value, pw2 = $("#af-pw2").value;
       var err = $("#auth-err");
       if (!name || !username) { err.textContent = "الاسم واسم المستخدم مطلوبان"; return; }
       if (!sector) { err.textContent = "اختر القطاع"; return; }
+      if (!department) { err.textContent = "اختر الإدارة العامة"; return; }
       if (pw.length < 6) { err.textContent = "كلمة المرور 6 أحرف على الأقل"; return; }
       if (pw !== pw2) { err.textContent = "كلمتا المرور غير متطابقتين"; return; }
       if (users().some(function (x) { return (x.usernameLower || x.username.toLowerCase()) === username.toLowerCase(); })) {
@@ -1028,15 +1158,24 @@
       var btn = $("#auth-btn"); btn.disabled = true;
       Box.hashPassword(pw).then(function (h) {
         var nextId = users().reduce(function (m, x) { return Math.max(m, x.id || 0); }, 0) + 1;
-        var u = { id: nextId, name: name, username: username, usernameLower: username.toLowerCase(), salt: h.salt, hash: h.hash, role: "owner_rep", sector: sector, status: "pending", createdAt: I.todayISO() };
+        var u = { id: nextId, name: name, username: username, usernameLower: username.toLowerCase(), salt: h.salt, hash: h.hash, role: "owner_rep", sector: sector, department: department, status: "pending", createdAt: I.todayISO() };
         users().push(u);
-        commitChange("طلب حساب جديد: " + name, function () {
-          authNotice = "تم إرسال طلبك بنجاح. سيتمكن مدير النظام من مراجعته والموافقة عليه، وبعدها يمكنك تسجيل الدخول.";
+        commitChange("طلب حساب جديد: " + name + " — " + department, function () {
+          authNotice = "تم إرسال طلبك بنجاح. سيتمكن مدير النظام من مراجعته والموافقة عليه، وبعدها يمكنك تسجيل الدخول ورؤية خدمات إدارتك.";
           authView = "pending-notice"; renderAuthGate();
         }, "تم إرسال الطلب");
       }).catch(function () { btn.disabled = false; err.textContent = "تعذّر إرسال الطلب"; });
     });
     $("#auth-to-login").addEventListener("click", function (e) { e.preventDefault(); authView = "login"; renderAuthGate(); });
+  }
+
+  /* الإدارات العامة المسجَّلة تحت قطاع معيّن — تُقرأ من allServices() لأن شاشة
+   * التسجيل تسبق تسجيل الدخول، فلا يوجد بعد مستخدم يحدّد النطاق. */
+  function departmentsOfSector(sector) {
+    if (!sector) return [];
+    return uniq(allServices().filter(function (s) { return s.sector === sector; })
+      .map(function (s) { return s.department; })).filter(Boolean)
+      .sort(function (a, b) { return a.localeCompare(b, "ar"); });
   }
 
   function bindNotice() {
@@ -1084,6 +1223,13 @@
   /* Catalog is decrypted — now resolve the PERSONAL account layer. A
    * remembered login restores instantly; otherwise the auth gate takes over
    * (bootstrap / login / register) before the main app is ever rendered. */
+  /* الجلسة تحمل نطاق الحساب (القطاع + الإدارة العامة) — تُبنى من مكان واحد
+   * حتى لا يسقط أحد الحقول في أحد مسارات الدخول الثلاثة. */
+  function sessionUser(u) {
+    return { id: u.id, name: u.name, username: u.username, role: u.role,
+             sector: u.sector || null, department: u.department || null };
+  }
+
   function afterCatalogUnlocked() {
     if (S.token) refreshSha();
     var remembered = localStorage.getItem("cat_user") || sessionStorage.getItem("cat_user");
@@ -1091,7 +1237,7 @@
       var uid = +remembered;
       var u = users().filter(function (x) { return x.id === uid && x.status === "approved"; })[0];
       if (u) {
-        S.currentUser = { id: u.id, name: u.name, username: u.username, role: u.role, sector: u.sector };
+        S.currentUser = sessionUser(u);
         hideBoot(); hideAuthGate(); render();
         return;
       }

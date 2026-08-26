@@ -80,13 +80,18 @@
    * regardless of the current user's sector scope (approvals, exports, etc). */
   function allServices() { return (S.catalog && S.catalog.services) || []; }
   /* The services the CURRENT user may see: everything for admins, only their
-   * own sector for an owner/representative account. This is the one function
-   * the whole browsing UI reads from, so scoping it here scopes everything. */
+   * own الإدارة العامة for an owner/representative account. This is the one
+   * function the whole browsing UI reads from, so scoping it here scopes
+   * everything (dashboard, filters, cards, drawer, search).
+   * Older accounts created before department scoping carry only a sector —
+   * they keep falling back to sector scope instead of seeing nothing. */
   function services() {
     var all = allServices();
     var u = S.currentUser;
-    if (u && u.role !== "admin") return all.filter(function (s) { return s.sector === u.sector; });
-    return all;
+    if (!u || u.role === "admin") return all;
+    if (u.department) return all.filter(function (s) { return s.department === u.department; });
+    if (u.sector) return all.filter(function (s) { return s.sector === u.sector; });
+    return [];
   }
   function refs() { S.catalog.refs = S.catalog.refs || { departments: [], owners: [], representatives: [] }; return S.catalog.refs; }
   function users() { S.catalog.users = S.catalog.users || []; return S.catalog.users; }
@@ -306,7 +311,8 @@
   function topbar() {
     var u = S.currentUser;
     var pendingCount = isAdmin() ? (pendingEdits().filter(function (p) { return p.status === "pending"; }).length +
-      users().filter(function (x) { return x.status === "pending"; }).length) : 0;
+      users().filter(function (x) { return x.status === "pending"; }).length +
+      analysisServices().length) : 0;
     return '<header class="topbar"><div class="wrap topbar-inner">' +
       '<div class="brand"><div class="brand-logo">' + ICON("briefcase") + '</div>' +
       '<div class="brand-txt"><b>' + esc(C.brand.title) + '</b><span>' + esc(C.brand.program) + " · " + esc(C.brand.year) + '</span></div></div>' +
@@ -317,7 +323,7 @@
         (pendingCount ? '<span class="notif-dot">' + pendingCount + '</span>' : '') + '</button>' : '') +
       (u ? '<button class="user-pill" data-act="settings" title="الحساب">' +
         '<span class="avatar" style="width:26px;height:26px;font-size:10px;background:' + avatarColor(u.name) + '">' + esc(initials(u.name)) + '</span>' +
-        '<span class="up-txt"><b>' + esc(u.name) + '</b><span>' + (u.role === "admin" ? "مدير النظام" : shortSector(u.sector)) + '</span></span></button>' : '') +
+        '<span class="up-txt"><b>' + esc(u.name) + '</b><span>' + esc(u.role === "admin" ? "مدير النظام" : scopeLabel(u)) + '</span></span></button>' : '') +
       '<button class="icon-btn" data-act="theme" title="المظهر">' + ICON(isDark() ? "sun" : "moon") + '</button>' +
       '<button class="icon-btn" data-act="settings" title="الإعدادات">' + ICON("gear") + '</button>' +
       '</div></header>';
@@ -357,8 +363,8 @@
         '<div class="txt"><div class="val">' + esc(s.val) + '</div><div class="lbl">' + esc(s.lbl) + '</div></div></button>';
     }).join("") + '</div></div>';
 
-    /* sectors cards */
-    html += '<div class="section" id="sectors-anchor"><div class="section-head"><div class="ttl"><div class="si">' + ICON("layers") + '</div><h2>القطاعات والمراكز</h2></div><span class="sub">' + sectors.length + ' قطاعات</span></div>' +
+    /* sectors cards — pointless for an account scoped to a single إدارة */
+    if (sectors.length > 1) html += '<div class="section" id="sectors-anchor"><div class="section-head"><div class="ttl"><div class="si">' + ICON("layers") + '</div><h2>القطاعات والمراكز</h2></div><span class="sub">' + sectors.length + ' قطاعات</span></div>' +
       '<div class="cards grid-3">' + sectors.slice().sort(function (a, b) { return countBy("sector", b) - countBy("sector", a); }).map(function (s) {
         var col = sectorColor(s);
         return '<button class="sector-card" style="--c:' + col + '" data-act="goto-filter" data-field="sector" data-value="' + attr(s) + '">' +
@@ -384,7 +390,7 @@
     /* حالة الإتاحة — نفس نمط بطاقات المراحل، وكل بطاقة مدخل لتصفية حالتها */
     html += '<div class="section" id="status-anchor"><div class="section-head"><div class="ttl"><div class="si">' + ICON("power") + '</div>' +
       '<h2>حالة إتاحة الخدمات</h2></div><span class="sub">اضغط أي حالة لعرض خدماتها</span></div>' +
-      '<div class="cards grid-3">' + C.serviceStatuses.map(function (st) {
+      '<div class="cards grid-4">' + C.serviceStatuses.map(function (st) {
         var cnt = countBy("status", st.key);
         var pct = Math.round(cnt / total * 100);
         var col = isDark() ? st.colorDark : st.color;
@@ -465,6 +471,18 @@
       '<div class="txt"><b>' + esc(name || "—") + '</b><span>' + esc(role) + '</span></div></div>';
   }
   function shortSector(s) { return String(s || "").replace(/^قطاع\s+/, "").replace(/^مركز\s+/, "مركز "); }
+  function shortDept(d) { return String(d || "").replace(/^الإدارة العامة\s+/, "").replace(/^إدارة\s+/, ""); }
+  /* What an account is scoped to, for the identity pill and account rows */
+  function scopeLabel(u) {
+    if (!u) return "";
+    if (u.role === "admin") return "مدير النظام";
+    return u.department || u.sector || "بلا إدارة";
+  }
+  /* الخدمات الجديدة التي أضافها أصحاب الإدارات وتنتظر تحليل مدير النظام.
+   * تُقرأ من allServices() لأنها طابور مراجعة خاص بالمدير لا يخضع للنطاق. */
+  function analysisServices() {
+    return allServices().filter(function (s) { return svcStatus(s) === C.newServiceStatus; });
+  }
 
   /* ---------------- Filter panel ---------------- */
   function filterPanel() {
@@ -656,6 +674,7 @@
     openService: openService, countBy: countBy, sectorColor: sectorColor, stageColor: stageColor,
     avatarColor: avatarColor, initials: initials, fmtDate: fmtDate,
     allServices: allServices, users: users, pendingEdits: pendingEdits, isAdmin: isAdmin,
-    svcStatus: svcStatus, statusColor: statusColor
+    svcStatus: svcStatus, statusColor: statusColor, analysisServices: analysisServices,
+    scopeLabel: scopeLabel, shortDept: shortDept, statusBadgeHTML: statusBadgeHTML
   };
 })();
