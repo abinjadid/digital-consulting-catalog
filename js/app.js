@@ -16,7 +16,7 @@
     currentUser: null, /* logged-in personal account — see auth gate in app-ui.js. null = not logged in yet */
     search: "",
     sort: "title",
-    showFilters: true,
+    showFilters: false,   /* لوحة الفلاتر مطويّة افتراضيًا في كل فتح للصفحة */
     filters: {
       sector: [], department: [], stage: [], objective: [],
       category: [], beneficiary: [], owner: [], representative: [], status: []

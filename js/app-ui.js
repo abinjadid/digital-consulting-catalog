@@ -116,7 +116,9 @@
   function gotoFilter(field, value) {
     for (var k in S.filters) S.filters[k] = [];
     if (S.filters[field]) S.filters[field] = [value];
-    S.showFilters = true; S.selected = null; closeDrawer();
+    /* لا تُفتح اللوحة هنا: شريط الفلاتر النشطة أعلى البطاقات يوضّح ما طُبِّق
+     * ويسمح بإزالته، فتبقى اللوحة مطويّة كما هو الوضع الافتراضي. */
+    S.selected = null; closeDrawer();
     render();
     scrollToAnchor("svc-anchor");
   }
