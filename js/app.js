@@ -23,6 +23,7 @@
     },
     selected: null,
     dirty: false,
+    staleSource: false,  /* البيانات المحمّلة جاءت من نسخة GitHub Pages المتأخرة لا من المستودع */
     sectorIndex: {}
   };
 
@@ -168,16 +169,34 @@
     return decodeURIComponent(escape(atob(str.replace(/\n/g, ""))));
   }
 
-  /* Fetch the encrypted envelope (+ sha when possible) */
+  /* Fetch the encrypted envelope (+ sha).
+   *
+   * ALWAYS try the Contents API first — including unauthenticated, which works
+   * on a public repo. The copy served by GitHub Pages is NOT authoritative: it
+   * only updates after a Pages rebuild and then sits behind a 10-minute CDN
+   * cache, so writes committed through the API stay invisible on the site for
+   * minutes. Reading from the API also yields the sha that belongs to the very
+   * content we loaded, which is what makes a later write safe.
+   *
+   * The Pages copy stays as a fallback for an API outage or an exhausted
+   * unauthenticated rate limit; `S.staleSource` records that we are on it so
+   * the app can re-sync as soon as the write token becomes available. */
   function fetchEnvelope() {
-    if (S.token) {
-      return fetch(apiUrl() + "?ref=" + C.github.branch + "&t=" + Date.now(), { headers: authHeaders(), cache: "no-store" })
-        .then(function (r) {
-          if (r.ok) return r.json().then(function (j) { S.sha = j.sha; return JSON.parse(b64DecodeUnicode(j.content)); });
-          return relativeEnvelope();
-        }).catch(relativeEnvelope);
-    }
-    return relativeEnvelope();
+    return fetch(apiUrl() + "?ref=" + C.github.branch + "&t=" + Date.now(), { headers: authHeaders(), cache: "no-store" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("API_" + r.status);
+        return r.json();
+      })
+      .then(function (j) {
+        S.sha = j.sha; S.staleSource = false;
+        return JSON.parse(b64DecodeUnicode(j.content));
+      })
+      .catch(function () {
+        /* No sha: it would belong to content we did not read, and writing
+         * against it would clobber whatever landed in between. */
+        S.sha = null; S.staleSource = true;
+        return relativeEnvelope();
+      });
   }
   function relativeEnvelope() {
     return fetch(C.localDataUrl + "?t=" + Date.now(), { cache: "no-store" })
@@ -212,6 +231,12 @@
         return r.json().catch(function () { return {}; }).then(function (e) {
           throw new Error(e && e.message ? e.message : ("HTTP " + r.status));
         });
+      }
+      /* On the stale fallback we hold no sha for the content in memory. Taking a
+       * fresh sha here would let the write succeed and silently overwrite newer
+       * remote data, so treat it as a conflict and let the user choose. */
+      if (!S.sha && S.staleSource) {
+        var se = new Error("CONFLICT"); se.conflict = true; return Promise.reject(se);
       }
       var ensure = S.sha ? Promise.resolve(S.sha) : refreshSha();
       return ensure.then(function (sha) {

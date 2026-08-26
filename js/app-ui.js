@@ -7,7 +7,7 @@
   var S = I.S, C = I.C, ICON = I.ICON, Box = I.Box, esc = I.esc, attr = I.attr, uniq = I.uniq;
   var $ = I.$, $all = I.$all, render = I.render, reRenderView = I.reRenderView, toast = I.toast;
   var openModal = I.openModal, closeModal = I.closeModal, confirmDialog = I.confirmDialog, closeDrawer = I.closeDrawer;
-  var persist = I.persist, fetchEnvelope = I.fetchEnvelope, refreshSha = I.refreshSha;
+  var persist = I.persist, fetchEnvelope = I.fetchEnvelope;
   var services = I.services, refs = I.refs, allValues = I.allValues, usageCount = I.usageCount, uniqueSectors = I.uniqueSectors;
   var allServices = I.allServices, users = I.users, pendingEdits = I.pendingEdits, isAdmin = I.isAdmin;
 
@@ -1523,7 +1523,22 @@
   }
 
   function afterCatalogUnlocked() {
-    if (S.token) refreshSha();
+    /* The boot fetch runs before the write token is known (it lives inside the
+     * encrypted file), so it may have fallen back to the stale Pages copy. Now
+     * that the token is in hand, pull the authoritative repo copy before the UI
+     * is shown — otherwise the user browses, and edits on top of, old data. */
+    if (S.token && S.staleSource) {
+      fetchEnvelope()
+        .then(function (env) { return Box.decryptEnvelope(env, S.password); })
+        .then(function (cat) { S.catalog = normalizeCatalog(cat); })
+        .catch(function () { /* keep the fallback copy; persist() guards the write */ })
+        .then(resumeSession);
+      return;
+    }
+    resumeSession();
+  }
+
+  function resumeSession() {
     var remembered = localStorage.getItem("cat_user") || sessionStorage.getItem("cat_user");
     if (remembered) {
       var uid = +remembered;
