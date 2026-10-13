@@ -13,3 +13,6 @@ Thumbs.db
 *.log
 .vscode/
 .idea/
+
+# مصدر الخط الأصلي (OTF) — المنشور هو نسخ WOFF2 في assets/fonts فقط
+ping ar + lt font/

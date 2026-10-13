@@ -5,12 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>دليل الخدمات الاستشارية الرقمية 2026</title>
   <meta name="description" content="دليل المستفيدين من الخدمات الاستشارية الرقمية المتاحة للجهات الحكومية ضمن برنامج الاستشارات الرقمية.">
-  <meta name="theme-color" content="#0b6b3e">
+  <meta name="theme-color" content="#0b6b3e" id="meta-theme">
 
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./guide.css?v=1">
+  <!-- المظهر قبل أول رسم لتفادي وميض الأبيض في الوضع الداكن.
+       المفتاح cat_theme مشترك مع النظام الداخلي (نفس الأصل)، فيبقى اختيارك واحدًا في الصفحتين. -->
+  <script>
+    (function () {
+      var t = null;
+      try { t = localStorage.getItem("cat_theme"); } catch (e) {}
+      if (t !== "dark" && t !== "light") t = window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      document.documentElement.setAttribute("data-theme", t);
+      var m = document.getElementById("meta-theme"); if (m) m.setAttribute("content", t === "dark" ? "#0a110e" : "#0b6b3e");
+    })();
+  </script>
+
+  <!-- Font: Ping AR + LT (مستضاف محليًا) -->
+  <link rel="preload" href="../assets/fonts/PingARLT-Regular.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="../assets/fonts/PingARLT-Bold.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="../assets/fonts.css?v=34">
+  <link rel="stylesheet" href="./guide.css?v=2">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230b6b3e'/%3E%3Cpath d='M6.5 8.5h11v9h-11z M9.5 8.5v-1.5a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v1.5' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 </head>
 <body>
@@ -41,6 +54,10 @@
         <label class="sr-only" for="q">ابحث عن خدمة</label>
         <span id="search-ic"></span>
         <input id="q" type="search" placeholder="ابحث عن خدمة..." autocomplete="off" disabled>
+      </div>
+      <div class="hactions">
+        <button type="button" class="hbtn" id="theme-btn" aria-label="تبديل المظهر" title="تبديل المظهر"></button>
+        <a class="hbtn hbtn-primary" id="login-btn" href="../" aria-label="تسجيل الدخول إلى النظام الداخلي" title="تسجيل الدخول إلى النظام الداخلي (للموظفين)"><span>تسجيل الدخول</span></a>
       </div>
     </div>
   </header>
@@ -101,7 +118,10 @@
 
   <footer class="site-footer">
     <div class="wrap foot-in">
-      <span>هيئة الحكومة الرقمية — برنامج الاستشارات الرقمية 2026</span>
+      <div class="foot-l">
+        <span>هيئة الحكومة الرقمية — برنامج الاستشارات الرقمية 2026</span>
+        <a class="foot-login" href="../"><span id="foot-ic"></span>تسجيل الدخول إلى النظام الداخلي</a>
+      </div>
       <span id="updated"></span>
     </div>
   </footer>
@@ -114,6 +134,6 @@
   <script src="../js/config.js?v=31"></script>
   <script src="../js/icons.js?v=31"></script>
   <script src="../js/crypto.js?v=31"></script>
-  <script src="./guide.js?v=1"></script>
+  <script src="./guide.js?v=2"></script>
 </body>
 </html>

@@ -768,7 +768,7 @@
             sectors.map(function (x) { return '<option value="' + attr(x) + '">' + esc(x) + '</option>'; }).join("") + '</select></div>' +
           '<div class="form-row"><label>الإدارة العامة</label><select name="department" disabled><option value="">اختر القطاع أولًا…</option></select></div>' +
         '</div>' +
-        '<p class="form-hint" id="uc-err" style="color:var(--danger);font-weight:600"></p>' +
+        '<p class="form-hint" id="uc-err" style="color:var(--danger);font-weight:700"></p>' +
       '</div>' +
       '<div class="modal-foot"><button type="submit" class="btn primary">' + ICON("check") + 'إنشاء الحساب</button>' +
       '<button type="button" class="btn ghost" id="uc-cancel">إلغاء</button></div></form>');
@@ -822,7 +822,7 @@
         'تعيين كلمة مرور جديدة لحساب <b>' + esc(u.name) + '</b> (@' + esc(u.username) + '). أبلغه بها بنفسك — لا تُعرض مرة أخرى.</p>' +
         '<input type="text" id="rp-pw" placeholder="كلمة المرور الجديدة (6 أحرف فأكثر)" ' +
           'style="width:100%;height:44px;border-radius:11px;border:1px solid var(--border);background:var(--surface-2);padding-inline:13px;font-size:13.5px">' +
-        '<p class="form-hint" id="rp-err" style="color:var(--danger);font-weight:600;margin-top:8px"></p></div>' +
+        '<p class="form-hint" id="rp-err" style="color:var(--danger);font-weight:700;margin-top:8px"></p></div>' +
       '<div class="modal-foot"><button class="btn primary" id="rp-ok">' + ICON("check") + 'تعيين</button>' +
       '<button class="btn ghost" id="rp-cancel">إلغاء</button></div>', { sm: true });
     $("#rp-cancel", m).addEventListener("click", function () { closeModal(); refreshAccounts(); });

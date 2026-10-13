@@ -59,11 +59,15 @@
     for (var i = 0; i < C.stages.length; i++) if (C.stages[i].key === key) return C.stages[i];
     return null;
   }
-  function stageColor(key) { var s = stageOf(key); return s ? s.color : "#667085"; }
-  function catColor(cat) {
+  /* كل عنصر ملوّن يحمل زوجًا فاتحًا/داكنًا (--cl / --cdk) ويختار CSS منه حسب المظهر،
+   * فلا حاجة لإعادة رسم أي شيء عند التبديل بين الوضعين. */
+  function cv(l, d) { return "--cl:" + l + ";--cdk:" + (d || l); }
+  function stageCV(key) { var s = stageOf(key); return s ? cv(s.color, s.colorDark) : cv("#667085", "#98a2b3"); }
+  function catCV(cat) {
     var i = CAT_ORDER.indexOf(cat);
     if (i < 0) { CAT_ORDER.push(cat); i = CAT_ORDER.length - 1; }
-    return C.palette.light[i % C.palette.light.length];
+    var L = C.palette.light, D = C.palette.dark;
+    return cv(L[i % L.length], D[i % D.length]);
   }
   function catIcon(cat) { return CAT_ICON[cat] || "tag"; }
   function byId(id) { for (var i = 0; i < ALL.length; i++) if (ALL[i].id === id) return ALL[i]; return null; }
@@ -107,6 +111,7 @@
       stage: one(s.stage),
       sla: one(s.sla),
       beneficiaries: list(s.beneficiaries),
+      objectives: list(s.objectives),
       description: multi(s.description),
       goals: multi(s.goals),
       prerequisites: multi(s.prerequisites),
@@ -114,7 +119,7 @@
     };
     /* اسم مختصر للبطاقة (الاسم الكامل يظهر في النافذة) */
     o.short = title.replace(/^خدمة الدعم الاستشاري\s*(في|لـ|ل)?\s*/, "").trim() || title;
-    o.hay = norm([o.title, o.category, o.description, o.goals, o.outputs, o.beneficiaries.join(" ")].join(" "));
+    o.hay = norm([o.title, o.category, o.description, o.goals, o.outputs, o.beneficiaries.join(" "), o.objectives.join(" ")].join(" "));
     return o;
   }
 
@@ -151,6 +156,8 @@
     $("#brand-mark").innerHTML = ICON("briefcase");
     $("#search-ic").innerHTML = ICON("search");
     $("#gov-ext").innerHTML = ICON("external");
+    $("#login-btn").insertAdjacentHTML("afterbegin", ICON("user"));
+    $("#foot-ic").innerHTML = ICON("unlock");
     $("#ic-stages").innerHTML = ICON("flag");
     $("#ic-cats").innerHTML = ICON("layers");
     $("#ic-grid").innerHTML = ICON("grid");
@@ -184,13 +191,13 @@
     $("#stage-grid").innerHTML = C.stages.map(function (st) {
       var n = ALL.filter(function (s) { return s.stage === st.key; }).length;
       var pct = total ? Math.round(n / total * 100) : 0;
-      return '<article class="stage" style="--c:' + st.color + '">' +
+      return '<article class="stage cv" style="' + cv(st.color, st.colorDark) + '">' +
         '<span class="stage-badge">' + esc(STAGE_ORDINAL[st.key] || "") + '</span>' +
         '<div class="stage-num">' + n + '</div>' +
         '<div class="stage-pct">' + pct + '% من إجمالي الخدمات</div>' +
         '<h3>' + esc(st.label) + '</h3>' +
         '<p>' + esc(st.desc) + '</p>' +
-        '<button type="button" class="btn btn-outline" style="--c:' + st.color + '" data-stage="' + esc(st.key) + '"' + (n ? "" : " disabled") + '>' +
+        '<button type="button" class="btn btn-outline" data-stage="' + esc(st.key) + '"' + (n ? "" : " disabled") + '>' +
           ICON("list") + (n ? "استعراض خدمات " + esc(st.label) : "لا توجد خدمات متاحة") + '</button>' +
       '</article>';
     }).join("");
@@ -198,7 +205,7 @@
 
   function renderChipsOnce() {
     $("#cat-chips").innerHTML = categories().map(function (c) {
-      return '<button type="button" class="chip" style="--c:' + catColor(c) + '" data-cat="' + esc(c) + '" aria-pressed="false">' +
+      return '<button type="button" class="chip cv" style="' + catCV(c) + '" data-cat="' + esc(c) + '" aria-pressed="false">' +
         '<i></i><span>' + esc(c) + '</span><em>0</em></button>';
     }).join("");
   }
@@ -211,15 +218,24 @@
   }
 
   /* ---------------- render: dynamic parts ---------------- */
+  /* الأهداف الاستراتيجية: شارات صغيرة؛ عند تجاوز الحدّ يظهر «+N» وتفاصيلها في العنوان */
+  function objChips(items, max) {
+    if (!items.length) return "";
+    var shown = max ? items.slice(0, max) : items;
+    var rest = items.length - shown.length;
+    return shown.map(function (o) { return '<span class="obj">' + esc(o) + '</span>'; }).join("") +
+      (rest > 0 ? '<span class="obj more" title="' + esc(items.slice(max).join("، ")) + '">+' + rest + '</span>' : "");
+  }
+
   function card(s) {
-    var col = catColor(s.category);
-    return '<a class="svc" href="#service/' + s.id + '" style="--c:' + col + '" aria-label="' + esc(s.short) + '">' +
+    return '<a class="svc cv" href="#service/' + s.id + '" style="' + catCV(s.category) + '" aria-label="' + esc(s.short) + '">' +
       '<span class="svc-bar"></span><div class="svc-body">' +
         '<div class="svc-cat">' + ICON(catIcon(s.category)) + '<span>' + esc(s.category) + '</span></div>' +
         '<h3>' + esc(s.short) + (s.isNew ? ' <span class="new">جديد</span>' : '') + '</h3>' +
         '<p class="svc-desc">' + esc(s.description || "") + '</p>' +
+        (s.objectives.length ? '<div class="objs" role="group" aria-label="الأهداف الاستراتيجية" title="الأهداف الاستراتيجية">' + ICON("target") + objChips(s.objectives, 3) + '</div>' : '') +
         '<div class="svc-foot"><div class="svc-meta">' +
-          (s.stage ? '<span class="tag"><i class="dot" style="background:' + stageColor(s.stage) + '"></i>' + esc(s.stage) + '</span>' : '') +
+          (s.stage ? '<span class="tag"><i class="dot cv" style="' + stageCV(s.stage) + '"></i>' + esc(s.stage) + '</span>' : '') +
           (s.sla ? '<span class="tag">' + ICON("clock") + esc(s.sla) + '</span>' : '') +
         '</div><span class="svc-more">التفاصيل ' + ICON("arrowLeft") + '</span></div>' +
       '</div></a>';
@@ -283,18 +299,17 @@
   }
 
   function showModal(s) {
-    var col = catColor(s.category);
     var m = $("#modal");
     lastFocus = document.activeElement;
     m.innerHTML =
-      '<div class="m-box" style="--c:' + col + '">' +
+      '<div class="m-box cv" style="' + catCV(s.category) + '">' +
         '<div class="m-top"></div>' +
         '<div class="m-head">' +
           '<button type="button" class="m-back" data-close>' + ICON("chevron") + 'العودة لجميع الخدمات</button>' +
           '<div class="m-cat">' + ICON(catIcon(s.category)) + '<span>' + esc(s.category) + '</span></div>' +
           '<h2 id="m-title">' + esc(s.title) + (s.isNew ? ' <span class="new">جديد</span>' : '') + '</h2>' +
           '<div class="m-tags">' +
-            (s.stage ? '<span class="tag"><i class="dot" style="background:' + stageColor(s.stage) + '"></i>' + esc(s.stage) + '</span>' : '') +
+            (s.stage ? '<span class="tag"><i class="dot cv" style="' + stageCV(s.stage) + '"></i>' + esc(s.stage) + '</span>' : '') +
             (s.sla ? '<span class="tag">' + ICON("clock") + esc(s.sla) + '</span>' : '') +
             s.beneficiaries.map(function (b) { return '<span class="tag">' + ICON("users") + esc(b) + '</span>'; }).join("") +
           '</div>' +
@@ -305,6 +320,7 @@
           section("check", "المتطلبات المسبقة", para(s.prerequisites, "لا توجد متطلبات مسبقة")) +
           section("briefcase", "المخرجات المتوقّعة", para(s.outputs, "لم تُحدَّد مخرجات بعد.")) +
           '<div class="m-facts">' +
+            (s.objectives.length ? '<div class="fact wide"><small>الأهداف الاستراتيجية</small><div class="objs">' + objChips(s.objectives) + '</div></div>' : '') +
             '<div class="fact"><small>الفئة المستفيدة</small><div class="bens">' +
               (s.beneficiaries.length ? s.beneficiaries.map(function (b) { return '<span class="tag">' + esc(b) + '</span>'; }).join("") : '<b>—</b>') +
             '</div></div>' +
@@ -431,6 +447,40 @@
     window.addEventListener("hashchange", route);
   }
 
+  /* ---------------- theme ---------------- */
+  var META = null;
+  function theme() { return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light"; }
+  function paintThemeBtn() {
+    var dark = theme() === "dark", b = $("#theme-btn");
+    b.innerHTML = ICON(dark ? "sun" : "moon");
+    var label = dark ? "التبديل إلى المظهر الفاتح" : "التبديل إلى المظهر الداكن";
+    b.setAttribute("aria-label", label); b.title = label;
+    if (META) META.setAttribute("content", dark ? "#0a110e" : "#0b6b3e");
+  }
+  function setTheme(t, save) {
+    var root = document.documentElement;
+    root.classList.add("theming");
+    root.setAttribute("data-theme", t);
+    requestAnimationFrame(function () { requestAnimationFrame(function () { root.classList.remove("theming"); }); });
+    if (save) { try { localStorage.setItem("cat_theme", t); } catch (e) {} }
+    paintThemeBtn();
+  }
+  function bindTheme() {
+    META = $("#meta-theme");
+    $("#theme-btn").addEventListener("click", function () { setTheme(theme() === "dark" ? "light" : "dark", true); });
+    /* بلا تفضيل محفوظ: اتبع مظهر النظام لحظيًا */
+    var mq = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)");
+    if (mq && mq.addEventListener) mq.addEventListener("change", function (e) {
+      var saved = null; try { saved = localStorage.getItem("cat_theme"); } catch (x) {}
+      if (saved !== "dark" && saved !== "light") setTheme(e.matches ? "dark" : "light", false);
+    });
+    /* تغيير المظهر من النظام الداخلي في تبويب آخر ينعكس هنا */
+    window.addEventListener("storage", function (e) {
+      if (e.key === "cat_theme" && (e.newValue === "dark" || e.newValue === "light")) setTheme(e.newValue, false);
+    });
+    paintThemeBtn();
+  }
+
   /* ---------------- boot ---------------- */
   function showError(err) {
     console.error(err);
@@ -442,6 +492,7 @@
 
   function start() {
     renderShell();
+    bindTheme();
     $("#state").innerHTML = '<div class="skeleton" aria-hidden="true"><div class="sk"></div><div class="sk"></div><div class="sk"></div></div>';
     bind();
     load().then(function () {
