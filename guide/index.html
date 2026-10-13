@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>دليل الخدمات الاستشارية الرقمية 2026</title>
+  <meta name="description" content="دليل المستفيدين من الخدمات الاستشارية الرقمية المتاحة للجهات الحكومية ضمن برنامج الاستشارات الرقمية.">
+  <meta name="theme-color" content="#0b6b3e">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./guide.css?v=1">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Crect width='24' height='24' rx='6' fill='%230b6b3e'/%3E%3Cpath d='M6.5 8.5h11v9h-11z M9.5 8.5v-1.5a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v1.5' fill='none' stroke='white' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+  <a class="skip" href="#services">تخطَّ إلى قائمة الخدمات</a>
+
+  <div class="gov">
+    <div class="wrap gov-in">
+      <span>هيئة الحكومة الرقمية</span>
+      <a href="https://www.dga.gov.sa" target="_blank" rel="noopener noreferrer">dga.gov.sa <span id="gov-ext"></span></a>
+    </div>
+  </div>
+
+  <header class="site-header">
+    <div class="wrap header-in">
+      <div class="brand">
+        <div class="mark" id="brand-mark"></div>
+        <div class="brand-txt">
+          <b>دليل الخدمات الاستشارية الرقمية</b>
+          <span>برنامج الاستشارات الرقمية — 2026</span>
+        </div>
+      </div>
+      <div class="hspace"></div>
+      <div class="hpills">
+        <span class="pill" id="h-count" hidden></span>
+        <span class="pill" id="h-cats" hidden></span>
+      </div>
+      <div class="hsearch">
+        <label class="sr-only" for="q">ابحث عن خدمة</label>
+        <span id="search-ic"></span>
+        <input id="q" type="search" placeholder="ابحث عن خدمة..." autocomplete="off" disabled>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap">
+      <nav class="crumbs" aria-label="مسار التنقل">
+        <span>هيئة الحكومة الرقمية</span><i class="sep"></i>
+        <span>برنامج الاستشارات الرقمية</span><i class="sep"></i>
+        <b>دليل الخدمات 2026</b>
+      </nav>
+
+      <section class="hero">
+        <div class="hero-txt">
+          <span class="eyebrow">هيئة الحكومة الرقمية — 2026</span>
+          <h1>دليل الخدمات الاستشارية الرقمية</h1>
+          <p>مجموعة متكاملة من الخدمات الاستشارية تدعم الجهات الحكومية في رحلة التحول الرقمي، من التخطيط الاستراتيجي حتى تحقيق الأثر المستدام.</p>
+        </div>
+        <div class="hero-stats" id="hero-stats" aria-live="polite"></div>
+      </section>
+
+      <div id="state"></div>
+
+      <div id="content" hidden>
+        <section class="block" aria-labelledby="stages-h">
+          <div class="block-head">
+            <span class="block-ic" id="ic-stages"></span>
+            <div><h2 id="stages-h">مراحل التحول الرقمي</h2><p>توزيع الخدمات على المراحل الثلاث وفق منهجية التحول الرقمي</p></div>
+          </div>
+          <div class="stage-grid" id="stage-grid"></div>
+        </section>
+
+        <section class="block" aria-labelledby="cats-h">
+          <div class="block-head">
+            <span class="block-ic" id="ic-cats"></span>
+            <div><h2 id="cats-h">التصنيف حسب الفئة</h2><p>اختر فئة لعرض الخدمات التابعة لها</p></div>
+          </div>
+          <div class="chips" id="cat-chips"></div>
+        </section>
+
+        <section class="block" id="services" aria-labelledby="svc-h">
+          <div class="block-head">
+            <span class="block-ic" id="ic-grid"></span>
+            <div><h2 id="svc-h">جميع الخدمات</h2><p id="svc-sub"></p></div>
+          </div>
+
+          <div class="toolbar">
+            <div class="seg" id="seg" role="group" aria-label="تصفية حسب المرحلة"></div>
+          </div>
+          <div class="active" id="active"></div>
+
+          <div class="grid" id="grid"></div>
+          <div class="empty" id="empty" hidden></div>
+        </section>
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <div class="wrap foot-in">
+      <span>هيئة الحكومة الرقمية — برنامج الاستشارات الرقمية 2026</span>
+      <span id="updated"></span>
+    </div>
+  </footer>
+
+  <div class="modal" id="modal" hidden role="dialog" aria-modal="true" aria-labelledby="m-title"></div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <noscript><p class="noscript">يتطلب هذا الدليل تفعيل JavaScript لعرض الخدمات.</p></noscript>
+
+  <script src="../js/config.js?v=31"></script>
+  <script src="../js/icons.js?v=31"></script>
+  <script src="../js/crypto.js?v=31"></script>
+  <script src="./guide.js?v=1"></script>
+</body>
+</html>
