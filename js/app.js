@@ -363,6 +363,7 @@
       (u ? '<button class="user-pill" data-act="settings" title="الحساب">' +
         '<span class="avatar" style="width:26px;height:26px;font-size:10px;background:' + avatarColor(u.name) + '">' + esc(initials(u.name)) + '</span>' +
         '<span class="up-txt"><b>' + esc(u.name) + '</b><span>' + esc(u.role === "admin" ? "مدير النظام" : scopeLabel(u)) + '</span></span></button>' : '') +
+      '<a class="ext-link" href="./guide/" target="_blank" rel="noopener noreferrer" title="عرض الصفحة الخارجية (صفحة المستفيدين)" aria-label="عرض الصفحة الخارجية">' + ICON("external") + '<span>الصفحة الخارجية</span></a>' +
       '<button class="icon-btn" data-act="theme" title="المظهر">' + ICON(isDark() ? "sun" : "moon") + '</button>' +
       '<button class="icon-btn" data-act="settings" title="الإعدادات">' + ICON("gear") + '</button>' +
       '</div></header>';

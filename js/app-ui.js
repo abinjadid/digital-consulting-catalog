@@ -1269,6 +1269,8 @@
       (opts.tabs ? authTabs(opts.tabs) : "") +
       body +
       (opts.foot || "") +
+      (opts.ext === false ? "" :
+        '<div class="auth-ext"><a href="./guide/" target="_blank" rel="noopener noreferrer">' + ICON("external") + 'عرض الصفحة الخارجية (دليل الخدمات)</a></div>') +
       '</div>';
   }
 
@@ -1295,21 +1297,25 @@
     var isPw = o.type === "password";
     return '<div class="lock-field has-label">' +
       '<label class="lf-label" for="' + o.id + '">' + esc(o.label) + (o.req ? ' <span class="req">*</span>' : '') + '</label>' +
-      '<span class="li" style="top:calc(50% + 13px)">' + ICON(o.icon) + '</span>' +
-      '<input type="' + (o.type || "text") + '" id="' + o.id + '"' +
-        (isPw ? '' : ' class="plain"') +
-        ' placeholder="' + attr(o.placeholder || "") + '"' +
-        (o.autocomplete ? ' autocomplete="' + o.autocomplete + '"' : '') +
-        (o.autofocus ? ' autofocus' : '') + '>' +
-      (isPw ? '<button type="button" class="reveal" data-reveal="' + o.id + '" aria-label="إظهار كلمة المرور" style="top:calc(50% + 13px)">' + ICON("eye") + '</button>' : '') +
+      '<div class="lf-box">' +
+        '<span class="li">' + ICON(o.icon) + '</span>' +
+        '<input type="' + (o.type || "text") + '" id="' + o.id + '"' +
+          (isPw ? '' : ' class="plain"') +
+          ' placeholder="' + attr(o.placeholder || "") + '"' +
+          (o.autocomplete ? ' autocomplete="' + o.autocomplete + '"' : '') +
+          (o.autofocus ? ' autofocus' : '') + '>' +
+        (isPw ? '<button type="button" class="reveal" data-reveal="' + o.id + '" aria-label="إظهار كلمة المرور">' + ICON("eye") + '</button>' : '') +
+      '</div>' +
       (o.meter ? '<div class="pw-meter" id="' + o.id + '-meter"><i></i><i></i><i></i><i></i></div>' : '') +
     '</div>';
   }
   function authSelect(o) {
     return '<div class="lock-field has-label">' +
       '<label class="lf-label" for="' + o.id + '">' + esc(o.label) + (o.req ? ' <span class="req">*</span>' : '') + '</label>' +
-      '<span class="li" style="top:calc(50% + 13px)">' + ICON(o.icon) + '</span>' +
-      '<select id="' + o.id + '"' + (o.disabled ? ' disabled' : '') + '>' + o.options + '</select>' +
+      '<div class="lf-box">' +
+        '<span class="li">' + ICON(o.icon) + '</span>' +
+        '<select id="' + o.id + '"' + (o.disabled ? ' disabled' : '') + '>' + o.options + '</select>' +
+      '</div>' +
     '</div>';
   }
   function authStep(label) { return '<div class="auth-step"><span>' + esc(label) + '</span><i></i></div>'; }
@@ -1356,7 +1362,7 @@
         '</div>' +
         authErr() +
         '<button type="submit" class="btn primary block" id="auth-btn">' + ICON("check") + 'إنشاء الحساب والدخول</button>' +
-      '</form>');
+      '</form>', { ext: false });
   }
 
   function loginMarkup() {
@@ -1377,8 +1383,10 @@
       "اختر قطاعك ثم إدارتك العامة — سترى وتُدير خدمات إدارتك فقط.",
       '<form id="auth-form">' +
         authStep("بيانات الحساب") +
-        authField({ id: "af-name", label: "الاسم الكامل", icon: "user", placeholder: "الاسم كما يظهر للفريق", autocomplete: "name", req: true, autofocus: true }) +
-        authField({ id: "af-username", label: "اسم المستخدم", icon: "key", placeholder: "يُستخدم للدخول", autocomplete: "username", req: true }) +
+        '<div class="auth-grid">' +
+          authField({ id: "af-name", label: "الاسم الكامل", icon: "user", placeholder: "كما يظهر للفريق", autocomplete: "name", req: true, autofocus: true }) +
+          authField({ id: "af-username", label: "اسم المستخدم", icon: "key", placeholder: "للدخول", autocomplete: "username", req: true }) +
+        '</div>' +
 
         authStep("نطاق العمل") +
         authSelect({ id: "af-sector", label: "القطاع", icon: "layers", req: true,

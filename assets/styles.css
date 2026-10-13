@@ -129,7 +129,7 @@ body {
 }
 .brand-logo svg { width: 23px; height: 23px; }
 .brand-txt { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
-.brand-txt b { font-size: 15.5px; font-weight: 700; letter-spacing: -.2px; white-space: nowrap; }
+.brand-txt b { font-size: 15.5px; font-weight: 700; letter-spacing: -.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .brand-txt span { font-size: 11.5px; color: var(--muted); font-weight: 500; }
 /* ضيق الترويسة: الشعار لا يتقلّص، فيُخفى السطر الفرعي ثم نص المستخدم بالتدريج
  * (الخط الجديد أعرض قليلًا من السابق فظهر التراكب عند 641–900px) */
@@ -137,7 +137,18 @@ body {
 @media (max-width: 860px) { .topbar .user-pill .up-txt { display: none; } .topbar .user-pill { padding-inline: 6px; } }
 .topbar-spacer { flex: 1 1 auto; }
 
-.topsearch { position: relative; flex: 1 1 320px; max-width: 440px; }
+/* زر عرض الصفحة الخارجية (صفحة المستفيدين) */
+.ext-link { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 42px; padding-inline: 14px; flex: none;
+  border-radius: 12px; border: 1px solid var(--border); background: var(--surface-2); color: var(--ink-2);
+  font-size: 13px; font-weight: 700; white-space: nowrap; transition: .16s; }
+.ext-link svg { width: 17px; height: 17px; }
+.ext-link:hover { background: var(--surface-3); color: var(--ink); border-color: var(--border-2); transform: translateY(-1px); }
+@media (max-width: 1100px) { .ext-link { width: 42px; padding: 0; } .ext-link span { display: none; } }
+/* الهاتف: الأزرار أكثر من أن يتّسع معها اسم النظام */
+@media (max-width: 640px) { .topbar-inner { gap: 10px; } .brand { flex: 0 1 auto; min-width: 0; } }
+@media (max-width: 520px) { .topbar-inner { gap: 8px; } .brand-txt { display: none; } }
+
+.topsearch { position: relative; flex: 1 1 320px; min-width: 120px; max-width: 440px; }
 .topsearch svg { position: absolute; inset-inline-start: 12px; top: 50%; transform: translateY(-50%); width: 17px; height: 17px; color: var(--muted); pointer-events: none; }
 .topsearch input {
   width: 100%; height: 42px; border-radius: var(--radius-pill);
@@ -536,9 +547,9 @@ main { padding-block: 26px 80px; }
 .mini-btn.danger:hover { color:var(--danger); border-color:color-mix(in srgb,var(--danger) 40%,transparent); background:var(--danger-soft); }
 
 /* ---------- Lock screen ---------- */
-.lock-screen { position:fixed; inset:0; z-index:200; display:grid; place-items:center; padding:24px;
+.lock-screen { position:fixed; inset:0; z-index:200; display:flex; overflow-y:auto; overscroll-behavior:contain; padding:24px;
   background: radial-gradient(900px 500px at 50% -10%, var(--bg-grad-2), transparent 60%), var(--bg); }
-.lock-card { width:min(430px,100%); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-xl); box-shadow:var(--shadow-lg); padding:34px 30px; text-align:center; }
+.lock-card { margin:auto; width:min(430px,100%); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius-xl); box-shadow:var(--shadow-lg); padding:34px 30px; text-align:center; }
 .lock-logo { width:64px; height:64px; border-radius:18px; margin:0 auto 18px; display:grid; place-items:center; color:#fff;
   background: linear-gradient(135deg, var(--hero-1), var(--hero-3)); box-shadow: var(--shadow-md); }
 .lock-logo svg { width:32px; height:32px; }
@@ -563,6 +574,16 @@ main { padding-block: 26px 80px; }
 
 /* ---------- Auth gate: login / register ---------- */
 .lock-card.wide { width:min(500px,100%); }
+@media (max-height: 900px) {
+  .lock-screen { padding: 16px; }
+  .lock-card { padding: 24px 26px; }
+  .lock-logo { width: 52px; height: 52px; border-radius: 15px; margin-bottom: 12px; }
+  .lock-logo svg { width: 26px; height: 26px; }
+  .lock-card .p { margin-bottom: 16px; }
+  .auth-tabs { margin-bottom: 14px; }
+  .auth-step { margin: 12px 0 8px; }
+  .lock-field.has-label { margin-bottom: 10px; }
+}
 .auth-tabs { display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:5px; margin-bottom:22px;
   background:var(--surface-2); border:1px solid var(--border); border-radius:14px; }
 .auth-tab { height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; gap:7px;
@@ -575,6 +596,8 @@ main { padding-block: 26px 80px; }
 .lf-label { display:block; font-size:12px; font-weight:700; color:var(--ink-2); margin-bottom:6px; text-align:start; }
 .lf-label .req { color:var(--danger); }
 .lock-field.has-label { margin-bottom:13px; }
+/* الأيقونات تتمركز على الحقل نفسه لا على الحقل + التسمية + المؤشر (كانت تنزلق للأسفل) */
+.lf-box { position:relative; }
 .auth-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 12px; }
 @media (max-width:460px) { .auth-grid { grid-template-columns:1fr; } }
 
@@ -589,12 +612,17 @@ main { padding-block: 26px 80px; }
 .auth-note p { font-size:11.5px; color:var(--ink-2); line-height:1.65; }
 .auth-note b { color:var(--ink); font-weight:700; }
 
+.auth-ext { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.auth-ext a { display: inline-flex; align-items: center; gap: 7px; font-size: 12.5px; font-weight: 700; color: var(--accent); }
+.auth-ext a:hover { text-decoration: underline; }
+.auth-ext svg { width: 14px; height: 14px; }
+
 .lock-err:empty { display:none; margin:0; min-height:0; }
 .lock-err:not(:empty) { display:flex; align-items:center; gap:7px; text-align:start; padding:10px 12px; border-radius:11px;
   background:var(--danger-soft); border:1px solid color-mix(in srgb, var(--danger) 26%, transparent); }
 .lock-err svg { width:15px; height:15px; flex:none; }
 
-.pw-meter { display:flex; gap:4px; margin:-6px 0 14px; }
+.pw-meter { display:flex; gap:4px; margin:7px 2px 0; }
 .pw-meter i { flex:1; height:3px; border-radius:2px; background:var(--border-2); transition:.2s; }
 .pw-meter.s1 i:nth-child(1) { background:var(--danger); }
 .pw-meter.s2 i:nth-child(-n+2) { background:var(--warn); }
