@@ -199,6 +199,9 @@ main { padding-bottom: 72px; }
 .chip.on em { background: var(--c); color: #fff; }
 :root[data-theme="dark"] .chip.on em { color: #07150e; }
 .chip.zero { opacity: .55; }
+/* شارات الأهداف الاستراتيجية: لون التمييز الأخضر نفسه المستخدم في البطاقات */
+.chip-obj { --c: var(--green); }
+.chip-obj svg { width: 15px; height: 15px; color: var(--green); }
 
 /* ---------- Toolbar / filters ---------- */
 .toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -238,6 +241,8 @@ main { padding-bottom: 72px; }
 .objs > svg { width: 14px; height: 14px; color: var(--muted); margin-inline-end: 1px; }
 .obj { display: inline-flex; align-items: center; padding: 2px 10px; border-radius: 8px; background: var(--green-soft); color: var(--pill-ink); font-size: 12px; font-weight: 500; line-height: 1.7; }
 .obj.more { background: var(--bg); color: var(--ink-2); font-weight: 700; }
+button.obj { cursor: pointer; border: 0; transition: background .15s; }
+button.obj:hover { background: color-mix(in srgb, var(--green) 24%, var(--surface)); }
 
 .svc-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: auto; padding-top: 12px; border-top: 1px solid var(--line); }
 .svc-meta { display: flex; flex-wrap: wrap; gap: 7px; }

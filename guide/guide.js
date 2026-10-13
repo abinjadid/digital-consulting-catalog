@@ -29,7 +29,7 @@
 
   var ALL = [];                 /* الخدمات المتاحة للمستفيد فقط */
   var UPDATED = "";
-  var S = { stage: "", category: "", q: "" };
+  var S = { stage: "", category: "", objective: "", q: "" };
   var QTOKENS = [];
 
   /* ---------------- helpers ---------------- */
@@ -143,12 +143,17 @@
   function match(s, skip) {
     if (skip !== "stage" && S.stage && s.stage !== S.stage) return false;
     if (skip !== "category" && S.category && s.category !== S.category) return false;
+    if (skip !== "objective" && S.objective && s.objectives.indexOf(S.objective) < 0) return false;
     if (skip !== "q") for (var i = 0; i < QTOKENS.length; i++) if (s.hay.indexOf(QTOKENS[i]) < 0) return false;
     return true;
   }
   function matching(skip) { return ALL.filter(function (s) { return match(s, skip); }); }
   function countBy(field, value, skip) {
     return ALL.filter(function (s) { return match(s, skip) && s[field] === value; }).length;
+  }
+  /* الخدمة قد تحمل هدفين، فالعدّ بالاحتواء لا بالمساواة */
+  function countObjective(value) {
+    return ALL.filter(function (s) { return match(s, "objective") && s.objectives.indexOf(value) >= 0; }).length;
   }
 
   /* ---------------- render: static parts ---------------- */
@@ -160,6 +165,7 @@
     $("#foot-ic").innerHTML = ICON("unlock");
     $("#ic-stages").innerHTML = ICON("flag");
     $("#ic-cats").innerHTML = ICON("layers");
+    $("#ic-objs").innerHTML = ICON("target");
     $("#ic-grid").innerHTML = ICON("grid");
     $all(".crumbs .sep").forEach(function (e) { e.setAttribute("aria-hidden", "true"); });
   }
@@ -169,6 +175,17 @@
     ALL.forEach(function (s) { if (!seen[s.category]) { seen[s.category] = 1; out.push(s.category); } });
     out.sort(function (a, b) {
       var ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
+      return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
+    });
+    return out;
+  }
+
+  function objectivesList() {
+    var seen = {}, out = [];
+    ALL.forEach(function (s) { s.objectives.forEach(function (o) { if (!seen[o]) { seen[o] = 1; out.push(o); } }); });
+    var order = C.taxonomy.objectives;
+    out.sort(function (a, b) {
+      var ia = order.indexOf(a), ib = order.indexOf(b);
       return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib);
     });
     return out;
@@ -210,6 +227,13 @@
     }).join("");
   }
 
+  function renderObjChipsOnce() {
+    $("#obj-chips").innerHTML = objectivesList().map(function (o) {
+      return '<button type="button" class="chip chip-obj" data-obj="' + esc(o) + '" aria-pressed="false">' +
+        ICON("target") + '<span>' + esc(o) + '</span><em>0</em></button>';
+    }).join("");
+  }
+
   function renderSegOnce() {
     var btns = [{ key: "", label: "الكل" }].concat(C.stages.map(function (s) { return { key: s.key, label: s.label }; }));
     $("#seg").innerHTML = btns.map(function (b) {
@@ -219,11 +243,15 @@
 
   /* ---------------- render: dynamic parts ---------------- */
   /* الأهداف الاستراتيجية: شارات صغيرة؛ عند تجاوز الحدّ يظهر «+N» وتفاصيلها في العنوان */
-  function objChips(items, max) {
+  function objChips(items, max, interactive) {
     if (!items.length) return "";
     var shown = max ? items.slice(0, max) : items;
     var rest = items.length - shown.length;
-    return shown.map(function (o) { return '<span class="obj">' + esc(o) + '</span>'; }).join("") +
+    return shown.map(function (o) {
+      return interactive
+        ? '<button type="button" class="obj" data-obj="' + esc(o) + '" title="عرض الخدمات ذات هذا الهدف">' + esc(o) + '</button>'
+        : '<span class="obj">' + esc(o) + '</span>';
+    }).join("") +
       (rest > 0 ? '<span class="obj more" title="' + esc(items.slice(max).join("، ")) + '">+' + rest + '</span>' : "");
   }
 
@@ -246,7 +274,7 @@
     $("#grid").innerHTML = res.map(card).join("");
     $("#grid").hidden = !res.length;
 
-    var filtering = !!(S.stage || S.category || QTOKENS.length);
+    var filtering = !!(S.stage || S.category || S.objective || QTOKENS.length);
     var empty = $("#empty");
     if (!res.length) {
       empty.hidden = false;
@@ -274,6 +302,14 @@
       var on = S.category === c;
       b.classList.toggle("on", on); b.classList.toggle("zero", n === 0 && !on); b.setAttribute("aria-pressed", on ? "true" : "false");
     });
+    /* الأهداف الاستراتيجية */
+    $all("#obj-chips .chip").forEach(function (b) {
+      var o = b.getAttribute("data-obj");
+      var n = countObjective(o);
+      b.querySelector("em").textContent = n;
+      var on = S.objective === o;
+      b.classList.toggle("on", on); b.classList.toggle("zero", n === 0 && !on); b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
     renderActive();
   }
 
@@ -284,6 +320,7 @@
     }
     if (S.stage) out.push(chip("stage", "المرحلة: " + S.stage));
     if (S.category) out.push(chip("category", "الفئة: " + S.category));
+    if (S.objective) out.push(chip("objective", "الهدف: " + S.objective));
     if (QTOKENS.length) out.push(chip("q", "بحث: " + S.q.trim()));
     if (out.length > 1) out.push('<button type="button" class="clear" data-clear>مسح الكل</button>');
     $("#active").innerHTML = out.join("");
@@ -320,7 +357,7 @@
           section("check", "المتطلبات المسبقة", para(s.prerequisites, "لا توجد متطلبات مسبقة")) +
           section("briefcase", "المخرجات المتوقّعة", para(s.outputs, "لم تُحدَّد مخرجات بعد.")) +
           '<div class="m-facts">' +
-            (s.objectives.length ? '<div class="fact wide"><small>الأهداف الاستراتيجية</small><div class="objs">' + objChips(s.objectives) + '</div></div>' : '') +
+            (s.objectives.length ? '<div class="fact wide"><small>الأهداف الاستراتيجية</small><div class="objs">' + objChips(s.objectives, 0, true) + '</div></div>' : '') +
             '<div class="fact"><small>الفئة المستفيدة</small><div class="bens">' +
               (s.beneficiaries.length ? s.beneficiaries.map(function (b) { return '<span class="tag">' + esc(b) + '</span>'; }).join("") : '<b>—</b>') +
             '</div></div>' +
@@ -392,12 +429,12 @@
     S.q = v; QTOKENS = norm(v).split(/\s+/).filter(Boolean);
   }
   function clearAll() {
-    S.stage = ""; S.category = ""; setQuery(""); $("#q").value = ""; refresh();
+    S.stage = ""; S.category = ""; S.objective = ""; setQuery(""); $("#q").value = ""; refresh();
   }
 
   function bind() {
     document.addEventListener("click", function (e) {
-      var t = e.target.closest("[data-stage],[data-cat],[data-seg],[data-remove],[data-clear],[data-close],[data-copy]");
+      var t = e.target.closest("[data-stage],[data-cat],[data-obj],[data-seg],[data-remove],[data-clear],[data-close],[data-copy]");
       if (!t) {
         if (e.target.id === "modal") closeByUser();
         return;
@@ -407,6 +444,13 @@
       else if (t.hasAttribute("data-cat")) {
         var c = t.getAttribute("data-cat"); S.category = S.category === c ? "" : c; refresh();
         if (S.category) scrollToServices();
+      }
+      else if (t.hasAttribute("data-obj")) {
+        var o = t.getAttribute("data-obj");
+        if (t.closest("#modal")) { closeByUser(); S.objective = o; }          /* من نافذة التفاصيل: يُطبَّق ثم تُغلق */
+        else S.objective = S.objective === o ? "" : o;                           /* من كتلة الأهداف: تبديل */
+        refresh();
+        if (S.objective) scrollToServices();
       }
       else if (t.hasAttribute("data-remove")) {
         var k = t.getAttribute("data-remove");
@@ -498,7 +542,7 @@
     load().then(function () {
       $("#state").innerHTML = "";
       $("#content").hidden = false;
-      renderStats(); renderStages(); renderChipsOnce(); renderSegOnce(); refresh();
+      renderStats(); renderStages(); renderChipsOnce(); renderObjChipsOnce(); renderSegOnce(); refresh();
       var q = $("#q"); q.disabled = false;
       var d = fmtDate(UPDATED);
       $("#updated").textContent = d ? "آخر تحديث للدليل: " + d : "";
