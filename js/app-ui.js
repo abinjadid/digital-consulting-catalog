@@ -109,9 +109,11 @@
     var arr = S.filters[field]; if (!arr) return;
     var i = arr.indexOf(value);
     if (i >= 0) arr.splice(i, 1); else arr.push(value);
+    pruneUnitFilter();
     reRenderView();
   }
-  function removeFilter(field, value) { var arr = S.filters[field]; var i = arr.indexOf(value); if (i >= 0) arr.splice(i, 1); reRenderView(); }
+  function removeFilter(field, value) { var arr = S.filters[field]; var i = arr.indexOf(value); if (i >= 0) arr.splice(i, 1); pruneUnitFilter(); reRenderView(); }
+  function pruneUnitFilter() { if (!S.filters.department.length) S.filters.unit = []; }
   function clearFilters() { for (var k in S.filters) S.filters[k] = []; reRenderView(); }
   function gotoFilter(field, value) {
     for (var k in S.filters) S.filters[k] = [];
@@ -214,7 +216,7 @@
             lockedInp("department", "الإدارة العامة", S.currentUser.department, "خدماتك تُسجَّل تحت إدارتك")
           : inp("sector", "القطاع", s.sector, "dl-sector", true) +
             inp("department", "الإدارة العامة", s.department, "dl-department")) +
-        inp("unit", "الإدارة", s.unit, "dl-unit")
+        inp("unit", "الإدارة/القسم", s.unit, "dl-unit")
       ) +
       formSection("الفريق المسؤول", "users",
         inp("owner", "مالك الخدمة", s.owner, "dl-owner") +
@@ -277,7 +279,7 @@
     sectorInput.addEventListener("input", refreshDeptOptions);
     refreshDeptOptions();
 
-    /* Same idea one level down: "الإدارة" suggestions follow the typed
+    /* Same idea one level down: "الإدارة/القسم" suggestions follow the typed
      * الإدارة العامة, once services start recording units under it. */
     var deptInput = $('[name="department"]', m);
     var unitDatalist = $("#dl-unit", m);
@@ -419,7 +421,7 @@
    * until it passes through here.
    * ===================================================================== */
   var FIELD_LABELS = {
-    title: "عنوان الخدمة", sector: "القطاع", department: "الإدارة العامة", unit: "الإدارة",
+    title: "عنوان الخدمة", sector: "القطاع", department: "الإدارة العامة", unit: "الإدارة/القسم",
     owner: "مالك الخدمة", representative: "ممثل الخدمة", stage: "المرحلة", category: "الفئة",
     status: "حالة الإتاحة", statusNote: "سبب الإيقاف", sla: "SLA", description: "الوصف", goals: "الأهداف المرجوّة",
     prerequisites: "المتطلبات", outputs: "المخرجات", stageRationale: "مبرر المرحلة",
@@ -508,7 +510,7 @@
    * التحليل»، والاعتماد هنا يعني نقلها إلى «مفعلة». */
   function analysisRowHTML(s) {
     var rows = [
-      ["القطاع", s.sector], ["الإدارة العامة", s.department], ["الإدارة", s.unit],
+      ["القطاع", s.sector], ["الإدارة العامة", s.department], ["الإدارة/القسم", s.unit],
       ["مالك الخدمة", s.owner], ["ممثل الخدمة", s.representative],
       ["المرحلة", s.stage], ["الفئة", s.category], ["الخط الزمني (SLA)", s.sla],
       ["وصف الخدمة", s.description], ["الأهداف المرجوّة", s.goals],

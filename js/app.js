@@ -19,7 +19,7 @@
     showFilters: false,   /* لوحة الفلاتر مطويّة افتراضيًا في كل فتح للصفحة */
     filters: {
       sector: [], department: [], stage: [], objective: [],
-      category: [], beneficiary: [], owner: [], representative: [], status: []
+      category: [], beneficiary: [], owner: [], representative: [], status: [], unit: []
     },
     selected: null,
     dirty: false,
@@ -120,6 +120,7 @@
     var f = S.filters;
     if (f.sector.length && f.sector.indexOf(svc.sector) < 0) return false;
     if (f.department.length && f.department.indexOf(svc.department) < 0) return false;
+    if (f.unit.length && f.unit.indexOf(svc.unit) < 0) return false;
     if (f.stage.length && f.stage.indexOf(svc.stage) < 0) return false;
     if (f.category.length && f.category.indexOf(svc.category) < 0) return false;
     if (f.status.length && f.status.indexOf(svcStatus(svc)) < 0) return false;
@@ -129,7 +130,7 @@
     if (f.beneficiary.length && !f.beneficiary.some(function (b) { return (svc.beneficiaries || []).indexOf(b) >= 0; })) return false;
     if (S.search.trim()) {
       var q = S.search.trim().toLowerCase();
-      var hay = [svc.title, svc.description, svc.goals, svc.department, svc.owner, svc.representative, svc.outputs, svc.sector, (svc.objectives || []).join(" ")].join(" ").toLowerCase();
+      var hay = [svc.title, svc.description, svc.goals, svc.department, svc.unit, svc.owner, svc.representative, svc.outputs, svc.sector, (svc.objectives || []).join(" ")].join(" ").toLowerCase();
       if (hay.indexOf(q) < 0) return false;
     }
     return true;
@@ -533,6 +534,8 @@
     } else {
       var depts = scopedDepartments();
       if (depts.length) groups += chipFilterGroup("department", "building", "الإدارة العامة", depts);
+      var units = S.filters.department.length ? scopedUnits() : [];
+      if (units.length) groups += chipFilterGroup("unit", "building2", "الإدارة/القسم", units);
       groups += teamGroup();
     }
     groups += chipFilterGroup("status", "power", "حالة الإتاحة", C.serviceStatuses.map(function (s) { return s.key; }), true);
@@ -558,6 +561,14 @@
   }
   /* Departments/team scoped to the currently selected sector(s) (and department,
    * for the team) — never dump every org-wide name regardless of context. */
+  /* الإدارات/الأقسام التابعة للإدارة العامة المختارة (المستوى الثالث بعد القطاع والإدارة العامة) */
+  function scopedUnits() {
+    var f = S.filters;
+    var pool = services().filter(function (s) {
+      return (!f.sector.length || f.sector.indexOf(s.sector) >= 0) && (!f.department.length || f.department.indexOf(s.department) >= 0);
+    });
+    return uniq(pool.map(function (s) { return s.unit; })).filter(Boolean).sort(function (x, y) { return x.localeCompare(y, "ar"); });
+  }
   function scopedBySectorDept() {
     var f = S.filters;
     return services().filter(function (s) {
@@ -615,7 +626,7 @@
   }
   function activeFilterBar() {
     if (!activeFilterCount() && !S.search) return "";
-    var labels = { sector: "القطاع", department: "الإدارة", stage: "المرحلة", objective: "الهدف", category: "الفئة", beneficiary: "المستفيد", owner: "المالك", representative: "الممثل", status: "حالة الإتاحة" };
+    var labels = { sector: "القطاع", department: "الإدارة العامة", unit: "الإدارة/القسم", stage: "المرحلة", objective: "الهدف", category: "الفئة", beneficiary: "المستفيد", owner: "المالك", representative: "الممثل", status: "حالة الإتاحة" };
     var chips = "";
     for (var field in S.filters) {
       if (!S.filters.hasOwnProperty(field)) continue;
@@ -657,7 +668,7 @@
         statusNoticeHTML(s) +
         '<div class="kv-grid" style="margin:14px 0">' +
           kv("building", "الإدارة العامة", s.department) +
-          kv("building2", "الإدارة", s.unit) +
+          kv("building2", "الإدارة/القسم", s.unit) +
           kv("clock", "الخط الزمني (SLA)", s.sla) +
           kvPerson("مالك الخدمة", s.owner) +
           kvPerson("ممثل الخدمة", s.representative) +
