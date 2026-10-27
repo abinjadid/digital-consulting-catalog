@@ -102,6 +102,7 @@
     else if (el.getAttribute && el.getAttribute("data-act") === "user-role") userSetRole(+el.getAttribute("data-value"), el.value);
     else if (el.getAttribute && el.getAttribute("data-act") === "user-sector") userSetSector(+el.getAttribute("data-value"), el.value);
     else if (el.getAttribute && el.getAttribute("data-act") === "user-department") userSetDepartment(+el.getAttribute("data-value"), el.value);
+    else if (el.getAttribute && el.getAttribute("data-act") === "user-unit") userSetUnit(+el.getAttribute("data-value"), el.value);
   });
 
   /* ---------------- Filters ---------------- */
@@ -216,7 +217,9 @@
             lockedInp("department", "الإدارة العامة", S.currentUser.department, "خدماتك تُسجَّل تحت إدارتك")
           : inp("sector", "القطاع", s.sector, "dl-sector", true) +
             inp("department", "الإدارة العامة", s.department, "dl-department")) +
-        inp("unit", "الإدارة/القسم", s.unit, "dl-unit")
+        (scoped && !isEdit && S.currentUser.unit
+          ? lockedInp("unit", "الإدارة/القسم", S.currentUser.unit, "من حسابك")
+          : inp("unit", "الإدارة/القسم", s.unit, "dl-unit"))
       ) +
       formSection("الفريق المسؤول", "users",
         inp("owner", "مالك الخدمة", s.owner, "dl-owner") +
@@ -286,7 +289,7 @@
     var allUnitOptions = allValues("unit").filter(Boolean);
     function refreshUnitOptions() {
       var dv = deptInput.value.trim();
-      var scoped = dv ? uniq(services().filter(function (x) { return x.department === dv; }).map(function (x) { return x.unit; })).filter(Boolean) : [];
+      var scoped = unitsOfDepartment(dv);
       var list = scoped.length ? scoped : allUnitOptions;
       unitDatalist.innerHTML = list.map(function (v) { return '<option value="' + attr(v) + '">'; }).join("");
     }
@@ -317,6 +320,7 @@
     if (!isAdmin() && S.currentUser) {
       if (S.currentUser.sector) rec.sector = S.currentUser.sector;
       if (S.currentUser.department) rec.department = S.currentUser.department;
+      if (!id && S.currentUser.unit) rec.unit = S.currentUser.unit;     /* إضافة جديدة تُسجَّل تحت قسمه */
     }
 
     var list = S.catalog.services;
@@ -625,6 +629,8 @@
         '<option value="">' + (u.sector ? "اختر الإدارة العامة…" : "اختر القطاع أولًا…") + '</option>' +
         deps.map(function (d) { return '<option value="' + attr(d) + '"' + (u.department === d ? " selected" : "") + '>' + esc(d) + '</option>'; }).join("") +
         '</select>';
+      ctl += '<select class="mini-select" data-act="user-unit" data-value="' + u.id + '"' + (unitsOfDepartment(u.department).length ? "" : " disabled") + '>' +
+        unitOptionsHTML(u.department, u.unit, "الإدارة/القسم (اختياري)…") + '</select>';
     }
 
     var acts = "";
@@ -645,7 +651,8 @@
     var scope = u.role === "admin"
       ? ICON("layers") + '<span>وصول كامل لجميع القطاعات والإدارات</span>'
       : (u.department
-          ? ICON("building") + '<span>' + esc(u.department) + '</span>' + ICON("layers") + '<span class="muted">' + esc(u.sector || "—") + '</span>'
+          ? (u.unit ? ICON("building2") + '<span>' + esc(u.unit) + '</span>' : '') +
+            ICON("building") + '<span>' + esc(u.department) + '</span>' + ICON("layers") + '<span class="muted">' + esc(u.sector || "—") + '</span>'
           : ICON("info") + '<span class="muted">لم يُحدَّد نطاق بعد — لن يرى أي خدمة</span>');
 
     return '<div class="um-card' + cls + '">' +
@@ -769,6 +776,7 @@
           '<div class="form-row"><label>القطاع</label><select name="sector"><option value="">—</option>' +
             sectors.map(function (x) { return '<option value="' + attr(x) + '">' + esc(x) + '</option>'; }).join("") + '</select></div>' +
           '<div class="form-row"><label>الإدارة العامة</label><select name="department" disabled><option value="">اختر القطاع أولًا…</option></select></div>' +
+          '<div class="form-row"><label>الإدارة/القسم <span class="muted" style="font-weight:500">(اختياري)</span></label><select name="unit" disabled><option value="">اختر الإدارة العامة أولًا…</option></select></div>' +
         '</div>' +
         '<p class="form-hint" id="uc-err" style="color:var(--danger);font-weight:700"></p>' +
       '</div>' +
@@ -776,16 +784,23 @@
       '<button type="button" class="btn ghost" id="uc-cancel">إلغاء</button></div></form>');
     $("#uc-cancel", m).addEventListener("click", function () { closeModal(); refreshAccounts(); });
 
-    var secSel = $('[name="sector"]', m), depSel = $('[name="department"]', m), roleSel = $('[name="role"]', m);
+    var secSel = $('[name="sector"]', m), depSel = $('[name="department"]', m), unitSel = $('[name="unit"]', m), roleSel = $('[name="role"]', m);
+    function refreshUnits() {
+      unitSel.innerHTML = unitOptionsHTML(depSel.value, "", "اختر الإدارة/القسم…");
+      unitSel.disabled = roleSel.value === "admin" || !unitsOfDepartment(depSel.value).length;
+    }
     secSel.addEventListener("change", function () {
       var deps = departmentsOfSector(secSel.value);
       depSel.disabled = !deps.length;
       depSel.innerHTML = '<option value="">' + (secSel.value ? "اختر الإدارة العامة…" : "اختر القطاع أولًا…") + '</option>' +
         deps.map(function (d) { return '<option value="' + attr(d) + '">' + esc(d) + '</option>'; }).join("");
+      refreshUnits();
     });
+    depSel.addEventListener("change", refreshUnits);
     roleSel.addEventListener("change", function () {
       var admin = roleSel.value === "admin";
       secSel.disabled = admin; depSel.disabled = admin || !secSel.value;
+      refreshUnits();
     });
     $("#uc-form", m).addEventListener("submit", function (e) { e.preventDefault(); createUserSubmit(m); });
   }
@@ -794,7 +809,7 @@
     function v(n) { var el = m.querySelector('[name="' + n + '"]'); return el ? el.value.trim() : ""; }
     var err = $("#uc-err", m);
     var name = v("name"), username = v("username"), pw = v("pw"), role = v("role");
-    var sector = role === "admin" ? "" : v("sector"), department = role === "admin" ? "" : v("department");
+    var sector = role === "admin" ? "" : v("sector"), department = role === "admin" ? "" : v("department"), unit = role === "admin" ? "" : v("unit");
     if (!name || !username) { err.textContent = "الاسم واسم المستخدم مطلوبان"; return; }
     if (pw.length < 6) { err.textContent = "كلمة المرور 6 أحرف على الأقل"; return; }
     if (users().some(function (x) { return (x.usernameLower || x.username.toLowerCase()) === username.toLowerCase(); })) {
@@ -806,7 +821,7 @@
         id: users().reduce(function (mx, x) { return Math.max(mx, x.id || 0); }, 0) + 1,
         name: name, username: username, usernameLower: username.toLowerCase(),
         salt: h.salt, hash: h.hash, role: role,
-        sector: sector || null, department: department || null,
+        sector: sector || null, department: department || null, unit: unit || null,
         status: "approved", createdAt: I.todayISO()
       };
       users().push(u);
@@ -901,7 +916,7 @@
   function userSetRole(uid, role) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
     if (u.role === "admin" && role !== "admin" && !guardLastAdmin(u, "تغيير الدور")) { refreshAccounts(); return; }
-    u.role = role; if (role === "admin") { u.sector = null; u.department = null; }
+    u.role = role; if (role === "admin") { u.sector = null; u.department = null; u.unit = null; }
     commitChange("تغيير دور مستخدم: " + u.name, refreshAccounts, "تم التحديث");
   }
   function userSetSector(uid, sector) {
@@ -909,12 +924,20 @@
     u.sector = sector || null;
     /* الإدارة تابعة للقطاع — تغيير القطاع يُبطل إدارة لم تعد تنتمي إليه */
     if (!u.sector || departmentsOfSector(u.sector).indexOf(u.department) < 0) u.department = null;
+    if (!u.department || unitsOfDepartment(u.department).indexOf(u.unit) < 0) u.unit = null;
     commitChange("تغيير قطاع مستخدم: " + u.name, refreshAccounts, "تم التحديث");
   }
   function userSetDepartment(uid, department) {
     var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
     u.department = department || null;
+    /* القسم تابع للإدارة العامة — تغييرها يُبطل قسمًا لم يعد ينتمي إليها */
+    if (!u.department || unitsOfDepartment(u.department).indexOf(u.unit) < 0) u.unit = null;
     commitChange("تغيير إدارة مستخدم: " + u.name, refreshAccounts, "تم التحديث");
+  }
+  function userSetUnit(uid, unit) {
+    var u = users().filter(function (x) { return x.id === uid; })[0]; if (!u) return;
+    u.unit = unit || null;
+    commitChange("تغيير الإدارة/القسم لمستخدم: " + u.name, refreshAccounts, "تم التحديث");
   }
 
   /* ---- Link an approved user to specific services as owner/representative
@@ -959,6 +982,7 @@
    * ===================================================================== */
   var MANAGE_META = {
     department: { label: "الإدارات العامة", icon: "building", refKey: "departments" },
+    unit: { label: "الإدارات/الأقسام", icon: "building2", refKey: "units" },
     owner: { label: "ملاك الخدمات", icon: "user", refKey: "owners" },
     representative: { label: "ممثلو الخدمات", icon: "users", refKey: "representatives" }
   };
@@ -987,6 +1011,11 @@
     shell.innerHTML =
       '<div class="seg-row">' + tabs + '</div>' +
       '<div class="mng-add"><input type="text" id="mng-add-in" placeholder="أضِف ' + esc(lbl) + ' جديدًا…" autocomplete="off">' +
+        (manageTab === "unit"
+          ? '<select id="mng-add-parent" title="الإدارة العامة التي يتبعها"><option value="">تابعة لـ… (الإدارة العامة)</option>' +
+              allValues("department").filter(Boolean).sort(function (x, y) { return x.localeCompare(y, "ar"); })
+                .map(function (d) { return '<option value="' + attr(d) + '">' + esc(d) + '</option>'; }).join("") + '</select>'
+          : '') +
         '<button class="btn primary sm" data-act="manage-add">' + ICON("plus") + 'إضافة</button></div>' +
       '<div class="mng-search">' + ICON("search") + '<input type="text" id="mng-search" placeholder="ابحث في ' + esc(lbl) + '…" value="' + attr(manageSearch) + '" autocomplete="off"></div>' +
       '<div class="mlist" id="manage-list"></div>' +
@@ -1019,7 +1048,8 @@
       var delBtn = used > 0
         ? '<button class="mini-btn" disabled title="مستخدمة في ' + used + ' خدمة — أعد تعيينها أولًا">' + ICON("trash") + '</button>'
         : '<button class="mini-btn danger" data-act="manage-delete" data-value="' + attr(v) + '" title="حذف">' + ICON("trash") + '</button>';
-      return '<div class="mrow"><div class="mtxt"><b>' + esc(v) + '</b></div>' +
+      var sub = manageTab === "unit" ? '<small>' + esc(unitParent(v) ? "تابعة لـ " + unitParent(v) : "غير مرتبطة بإدارة عامة") + '</small>' : '';
+      return '<div class="mrow"><div class="mtxt"><b>' + esc(v) + '</b>' + sub + '</div>' +
         '<span class="usage' + (used ? "" : " zero") + '">' + used + ' خدمة</span>' +
         '<button class="mini-btn" data-act="manage-edit-start" data-value="' + attr(v) + '" title="إعادة تسمية">' + ICON("edit") + '</button>' +
         delBtn + '</div>';
@@ -1038,6 +1068,12 @@
     var input = $("#mng-add-in"); if (!input) return;
     var v = input.value.trim(); if (!v) return;
     if (allValues(manageTab).indexOf(v) >= 0) { toast("موجود مسبقًا", "err"); return; }
+    if (manageTab === "unit") {
+      /* القسم بلا إدارة عامة لا يظهر في القوائم المتتالية (التسجيل/النماذج) */
+      var parent = ($("#mng-add-parent") || {}).value || "";
+      if (!parent) { toast("اختر الإدارة العامة التي يتبعها", "err"); return; }
+      refs().unitParents[v] = parent;
+    }
     refs()[MANAGE_META[manageTab].refKey].push(v);
     manageSearch = ""; manageEditing = null;
     commitChange("إضافة " + MANAGE_META[manageTab].label + ": " + v, renderManage, "تمت الإضافة");
@@ -1052,6 +1088,12 @@
     }
     var field = manageTab;
     services().forEach(function (s) { if (s[field] === oldV) s[field] = newV; });
+    /* الحسابات مرتبطة بالإدارة العامة والإدارة/القسم بالاسم — إعادة التسمية تشملها،
+     * وإلا فقد أصحابها نطاقهم بصمت */
+    if (field === "department" || field === "unit") users().forEach(function (x) { if (x[field] === oldV) x[field] = newV; });
+    var up = refs().unitParents;
+    if (field === "unit" && up[oldV]) { up[newV] = up[oldV]; delete up[oldV]; }
+    if (field === "department") Object.keys(up).forEach(function (k) { if (up[k] === oldV) up[k] = newV; });
     var rk = MANAGE_META[manageTab].refKey, arr = refs()[rk];
     var idx = arr.indexOf(oldV); if (idx >= 0) arr[idx] = newV;
     refs()[rk] = uniq(arr);
@@ -1061,10 +1103,13 @@
   function manageDelete(v) {
     var used = usageCount(manageTab, v);
     if (used > 0) { toast("لا يمكن الحذف", "err", "مستخدمة في " + used + " خدمة — أعد تعيينها أولًا"); return; }
+    var accts = (manageTab === "unit" || manageTab === "department") ? users().filter(function (x) { return x[manageTab] === v; }).length : 0;
+    if (accts > 0) { toast("لا يمكن الحذف", "err", "مرتبطة بـ " + accts + " حساب — غيّر نطاقه من إدارة المستخدمين أولًا"); return; }
     confirmDialog({ title: "حذف عنصر", message: 'حذف «' + v + '» من قائمة ' + MANAGE_META[manageTab].label + '؟', confirm: "حذف", danger: true }).then(function (ok) {
       if (!ok) return;
       var rk = MANAGE_META[manageTab].refKey;
       refs()[rk] = refs()[rk].filter(function (x) { return x !== v; });
+      if (manageTab === "unit") delete refs().unitParents[v];
       commitChange("حذف " + MANAGE_META[manageTab].label + ": " + v, renderManage, "تم الحذف");
     });
   }
@@ -1084,7 +1129,7 @@
         '<div style="display:flex;align-items:center;gap:12px">' +
           '<span class="avatar" style="width:44px;height:44px;font-size:15px;background:' + I.avatarColor(u.name) + '">' + esc(I.initials(u.name)) + '</span>' +
           '<div><b style="font-size:14px;font-weight:700;display:block">' + esc(u.name) + '</b>' +
-          '<span class="muted" style="font-size:12px">@' + esc(u.username) + ' · ' + esc(u.role === "admin" ? "مدير النظام" : "مالك/ممثل خدمات — " + I.scopeLabel(u)) + '</span></div>' +
+          '<span class="muted" style="font-size:12px">@' + esc(u.username) + ' · ' + esc(u.role === "admin" ? "مدير النظام" : "مالك/ممثل خدمات — " + (u.department || u.sector || "بلا إدارة") + (u.unit ? " · " + u.unit : "")) + '</span></div>' +
         '</div>') : '') +
 
       section("المظهر", "moon",
@@ -1197,6 +1242,8 @@
     cat.refs.departments = cat.refs.departments || [];
     cat.refs.owners = cat.refs.owners || [];
     cat.refs.representatives = cat.refs.representatives || [];
+    cat.refs.units = cat.refs.units || [];
+    cat.refs.unitParents = cat.refs.unitParents || {};
     cat.taxonomy = cat.taxonomy || C.taxonomy;
     cat.updatedAt = cat.updatedAt || I.todayISO();
     cat.users = cat.users || [];
@@ -1396,6 +1443,8 @@
             sectors.map(function (x) { return '<option value="' + attr(x) + '">' + esc(x) + '</option>'; }).join("") }) +
         authSelect({ id: "af-department", label: "الإدارة العامة", icon: "building", req: true, disabled: true,
           options: '<option value="">اختر القطاع أولًا…</option>' }) +
+        authSelect({ id: "af-unit", label: "الإدارة/القسم (اختياري)", icon: "building2", disabled: true,
+          options: '<option value="">اختر الإدارة العامة أولًا…</option>' }) +
 
         authStep("كلمة المرور") +
         '<div class="auth-grid">' +
@@ -1458,18 +1507,24 @@
 
   function bindRegister() {
     /* الإدارات تتبع القطاع المختار — لا تُسرد كل إدارات الهيئة دفعةً واحدة */
-    var secSel = $("#af-sector"), depSel = $("#af-department");
+    var secSel = $("#af-sector"), depSel = $("#af-department"), unitSel = $("#af-unit");
+    function refreshUnits() {
+      unitSel.innerHTML = unitOptionsHTML(depSel.value, "", "اختر الإدارة/القسم…");
+      unitSel.disabled = !unitsOfDepartment(depSel.value).length;
+    }
     secSel.addEventListener("change", function () {
       var deps = departmentsOfSector(secSel.value);
       depSel.disabled = !deps.length;
       depSel.innerHTML = '<option value="">' + (secSel.value ? (deps.length ? "اختر الإدارة العامة…" : "لا توجد إدارات في هذا القطاع") : "اختر القطاع أولًا…") + '</option>' +
         deps.map(function (d) { return '<option value="' + attr(d) + '">' + esc(d) + '</option>'; }).join("");
+      refreshUnits();
     });
+    depSel.addEventListener("change", refreshUnits);
 
     $("#auth-form").addEventListener("submit", function (e) {
       e.preventDefault();
       var name = $("#af-name").value.trim(), username = $("#af-username").value.trim();
-      var sector = secSel.value, department = depSel.value;
+      var sector = secSel.value, department = depSel.value, unit = unitSel.value;
       var pw = $("#af-pw").value, pw2 = $("#af-pw2").value;
       if (!name || !username) { setAuthErr("الاسم واسم المستخدم مطلوبان"); return; }
       if (!sector) { setAuthErr("اختر القطاع"); return; }
@@ -1482,9 +1537,9 @@
       var btn = $("#auth-btn"); btn.disabled = true;
       Box.hashPassword(pw).then(function (h) {
         var nextId = users().reduce(function (m, x) { return Math.max(m, x.id || 0); }, 0) + 1;
-        var u = { id: nextId, name: name, username: username, usernameLower: username.toLowerCase(), salt: h.salt, hash: h.hash, role: "owner_rep", sector: sector, department: department, status: "pending", createdAt: I.todayISO() };
+        var u = { id: nextId, name: name, username: username, usernameLower: username.toLowerCase(), salt: h.salt, hash: h.hash, role: "owner_rep", sector: sector, department: department, unit: unit || null, status: "pending", createdAt: I.todayISO() };
         users().push(u);
-        commitChange("طلب حساب جديد: " + name + " — " + department, function () {
+        commitChange("طلب حساب جديد: " + name + " — " + department + (unit ? " / " + unit : ""), function () {
           authNotice = "تم إرسال طلبك بنجاح. سيتمكن مدير النظام من مراجعته والموافقة عليه، وبعدها يمكنك تسجيل الدخول ورؤية خدمات إدارتك.";
           authView = "pending-notice"; renderAuthGate();
         }, "تم إرسال الطلب");
@@ -1499,6 +1554,28 @@
     return uniq(allServices().filter(function (s) { return s.sector === sector; })
       .map(function (s) { return s.department; })).filter(Boolean)
       .sort(function (a, b) { return a.localeCompare(b, "ar"); });
+  }
+
+  /* الإدارة العامة التي يتبعها قسم: من القائمة إن سُجّل فيها، وإلا من الخدمات */
+  function unitParent(unit) {
+    var p = refs().unitParents[unit];
+    if (p) return p;
+    var counts = {}, best = null;
+    allServices().forEach(function (s) { if (s.unit === unit && s.department) counts[s.department] = (counts[s.department] || 0) + 1; });
+    Object.keys(counts).forEach(function (d) { if (!best || counts[d] > counts[best]) best = d; });
+    return best;
+  }
+  /* الإدارات/الأقسام تحت إدارة عامة: المستخدمة في خدماتها + المضافة يدويًا في القوائم */
+  function unitsOfDepartment(dept) {
+    if (!dept) return [];
+    var fromSvc = allServices().filter(function (s) { return s.department === dept; }).map(function (s) { return s.unit; });
+    var fromRefs = refs().units.filter(function (x) { return unitParent(x) === dept; });
+    return uniq(fromSvc.concat(fromRefs)).filter(Boolean).sort(function (x, y) { return x.localeCompare(y, "ar"); });
+  }
+  function unitOptionsHTML(dept, current, emptyLabel) {
+    var units = unitsOfDepartment(dept);
+    return '<option value="">' + esc(!dept ? "اختر الإدارة العامة أولًا…" : (units.length ? emptyLabel : "لا توجد أقسام مسجّلة لهذه الإدارة")) + '</option>' +
+      units.map(function (x) { return '<option value="' + attr(x) + '"' + (current === x ? " selected" : "") + '>' + esc(x) + '</option>'; }).join("");
   }
 
   function bindNotice() {
@@ -1534,7 +1611,7 @@
    * حتى لا يسقط أحد الحقول في أحد مسارات الدخول الثلاثة. */
   function sessionUser(u) {
     return { id: u.id, name: u.name, username: u.username, role: u.role,
-             sector: u.sector || null, department: u.department || null };
+             sector: u.sector || null, department: u.department || null, unit: u.unit || null };
   }
 
   function afterCatalogUnlocked() {

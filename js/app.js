@@ -94,7 +94,12 @@
     if (u.sector) return all.filter(function (s) { return s.sector === u.sector; });
     return [];
   }
-  function refs() { S.catalog.refs = S.catalog.refs || { departments: [], owners: [], representatives: [] }; return S.catalog.refs; }
+  function refs() {
+    S.catalog.refs = S.catalog.refs || { departments: [], owners: [], representatives: [] };
+    S.catalog.refs.units = S.catalog.refs.units || [];
+    S.catalog.refs.unitParents = S.catalog.refs.unitParents || {};   /* الإدارة/القسم → الإدارة العامة التابع لها */
+    return S.catalog.refs;
+  }
   function users() { S.catalog.users = S.catalog.users || []; return S.catalog.users; }
   function pendingEdits() { S.catalog.pendingEdits = S.catalog.pendingEdits || []; return S.catalog.pendingEdits; }
   function isAdmin() { return !!(S.currentUser && S.currentUser.role === "admin"); }
@@ -102,7 +107,7 @@
   function allValues(field) {
     var derived = services().map(function (s) { return s[field]; });
     var r = refs();
-    var extra = field === "department" ? r.departments : field === "owner" ? r.owners : field === "representative" ? r.representatives : [];
+    var extra = field === "department" ? r.departments : field === "unit" ? r.units : field === "owner" ? r.owners : field === "representative" ? r.representatives : [];
     return uniq(derived.concat(extra || []));
   }
   function usageCount(field, value) {
@@ -517,7 +522,7 @@
   function scopeLabel(u) {
     if (!u) return "";
     if (u.role === "admin") return "مدير النظام";
-    return u.department || u.sector || "بلا إدارة";
+    return u.unit || u.department || u.sector || "بلا إدارة";     /* الأدق أولًا */
   }
   /* الخدمات الجديدة التي أضافها أصحاب الإدارات وتنتظر تحليل مدير النظام.
    * تُقرأ من allServices() لأنها طابور مراجعة خاص بالمدير لا يخضع للنطاق. */
